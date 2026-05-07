@@ -1,0 +1,1 @@
+# Per-store production plan table

@@ -1,0 +1,1 @@
+# Generates fake historical data (different on store level)
