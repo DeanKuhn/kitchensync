@@ -101,6 +101,7 @@ kps-forecasting/
 ├── dbt/                       # dbt project (staging → intermediate → marts → metrics)
 ├── ml/                        # Feature engineering, training, inference, evaluation
 ├── dashboard/                 # Streamlit app
+├── scripts/                   # Random tasks
 └── tests/                     # Unit tests for API, simulator, ML features
 ```
 

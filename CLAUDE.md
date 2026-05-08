@@ -123,6 +123,8 @@ kps-forecasting/
 │   │   └── store_selector.py  # Store dropdown
 │   └── utils/
 │       └── data_fetch.py      # Pulls latest predictions from Snowflake/Postgres
+├── scripts/
+│   └── init_db.py             # One-time setup script
 │
 └── tests/
     ├── test_api.py
