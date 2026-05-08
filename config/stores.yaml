@@ -1,1 +1,89 @@
-# Stores IDs, names, and regional metadata
+stores:
+
+  # WEST WISCONSIN
+  - id: "store_012"
+    name: "Store 012"
+    region: "West Wisconsin"
+    level: 4
+    hours: "24/7"
+    active: true
+
+  - id: "store_027"
+    name: "Store 027"
+    region: "West Wisconsin"
+    level: 2
+    hours: "5am-11pm"
+    active: true
+
+  - id: "store_034"
+    name: "Store 034"
+    region: "West Wisconsin"
+    level: 3
+    hours: "24/7"
+    active: true
+
+  # SOUTH WISCONSIN
+  - id: "store_056"
+    name: "Store 056"
+    region: "South Wisconsin"
+    level: 4
+    hours: "24/7"
+    active: true
+
+  - id: "store_061"
+    name: "Store 061"
+    region: "South Wisconsin"
+    level: 1
+    hours: "5am-11pm"
+    active: true
+
+  - id: "store_078"
+    name: "Store 078"
+    region: "South Wisconsin"
+    level: 3
+    hours: "5am-11pm"
+    active: true
+
+  # MINNESOTA
+  - id: "store_091"
+    name: "Store 091"
+    region: "Minnesota"
+    level: 4
+    hours: "24/7"
+    active: true
+
+  - id: "store_103"
+    name: "Store 103"
+    region: "Minnesota"
+    level: 2
+    hours: "5am-11pm"
+    active: true
+
+  - id: "store_115"
+    name: "Store 115"
+    region: "Minnesota"
+    level: 3
+    hours: "24/7"
+    active: true
+
+  # IOWA
+  - id: "store_128"
+    name: "Store 128"
+    region: "Iowa"
+    level: 1
+    hours: "5am-11pm"
+    active: true
+
+  - id: "store_134"
+    name: "Store 134"
+    region: "Iowa"
+    level: 2
+    hours: "5am-11pm"
+    active: true
+
+  - id: "store_147"
+    name: "Store 147"
+    region: "Iowa"
+    level: 4
+    hours: "24/7"
+    active: true

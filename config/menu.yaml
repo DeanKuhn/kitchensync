@@ -1,1 +1,133 @@
-# This will include food items and categories
+
+items:
+
+    # LUNCH HOT SPOT
+  - id: "CHEESEBURGER"
+    name: "Cheeseburger"
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0 # 0 = no batch requirement
+    active: true
+    added: 2024-01-01
+
+  - id: "CHICKEN_SANDWICH"
+    name: "Chicken Sandwich"
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+  - id: "BREAK_STICKS"
+    name: "Break Sticks"
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+  - id: "PIZZA_SLICE"
+    name: "Pizza Slice"
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 1.5
+    batch: 3 # must b
+    active: true
+    added: 2024-01-01
+
+    # BREAKFAST HOT SPOT
+  - id: "SAUSAGE_EGG_CROISSANT"
+    name: "Sausage Egg Croissant"
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2.5
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+  - id: "BACON_EGG_CROISSANT"
+    name: "Bacon Egg Croissant"
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2.5
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+    # BREAKFAST ROLLER GRILL
+  - id: "EGG_ROLL"
+    name: "Egg Roll"
+    area: "roller_grill"
+    category: "all_day"
+    hold_time: 4
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+  - id: "SAUSAGE_EGG_TORNADO"
+    name: "Sausage Egg Tornado"
+    area: "roller_grill"
+    category: "breakfast"
+    hold_time: 4
+    batch: 0
+    active: true
+    added: 2025-07-01 # New item, started July 2025
+
+    # LUNCH ROLLER GRILL
+  - id: "HOT_DOG"
+    name: "Hot Dog"
+    area: "roller_grill"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+  - id: "BRAT"
+    name: "Brat"
+    area: "roller_grill"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    active: true
+    added: 2024-01-01
+
+    # CHICKEN, NEW PROGRAM AS OF JUNE 2025
+  - id: "2PC_WHITE_MEAT"
+    name: "2 Pc White Meat"
+    area: "chicken"
+    category: "lunch"
+    hold_time: 3
+    batch: 0
+    active: true
+    added: 2025-06-01
+
+  - id: "2PC_DARK_MEAT"
+    name: "2 Pc Dark Meat"
+    area: "chicken"
+    category: "lunch"
+    hold_time: 3
+    batch: 0
+    active: true
+    added: 2025-06-01
+
+  - id: "3PC_TENDERS"
+    name: "3 Pc Tenders"
+    area: "chicken"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    active: true
+    added: 2025-06-01
+
+  - id: "CHICKEN_POT_PIE"
+    name: "Chicken Pot Pie"
+    area: "chicken"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    active: false # Chicken pot pies were discontinued
+    added: 2025-06-01

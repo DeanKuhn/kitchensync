@@ -97,8 +97,8 @@ kps-forecasting/
 │       └── connection.py      # Neon/Postgres connection management
 │
 ├── dbt/
-│   ├── dbt_project.yml
-│   ├── profiles.yml.example
+│   ├── dbt_project.yaml
+│   ├── profiles.yaml.example
 │   ├── seeds/                 # Historical data loaded into Snowflake
 │   ├── models/
 │   │   ├── staging/           # stg_sales__*, stg_stores__*, stg_menu__*
