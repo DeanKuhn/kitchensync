@@ -1,0 +1,5 @@
+[dependency-groups]
+dev = [
+    "fastapi>=0.136.1",
+    "uvicorn>=0.46.0",
+]

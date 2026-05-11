@@ -1,1 +1,0 @@
-# POST /sales endpoint
