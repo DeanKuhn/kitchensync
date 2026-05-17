@@ -1,12 +1,13 @@
 # Pydantic models for events
 
 from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
 class SalesEvent(BaseModel):
     item_id: str
     quantity: int
     price: float
-    hold_time: int
 
 class WasteEvent(BaseModel):
     item_id: str

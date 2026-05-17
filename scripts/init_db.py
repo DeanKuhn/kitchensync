@@ -27,8 +27,7 @@ for store in config["stores"]:
             item_id TEXT,
             quantity INT,
             price NUMERIC(10, 2),
-            hold_time INT,
-            created_at TIMESTAMP);
+            created_at TIMESTAMP DEFAULT now());
             """)
 
         # Create waste_logs table for each store
@@ -38,7 +37,7 @@ for store in config["stores"]:
             item_id TEXT,
             quantity INT,
             reason TEXT,
-            created_at TIMESTAMP);
+            created_at TIMESTAMP DEFAULT now());
             """)
 
         # Create inventory_snapshots table for each store
@@ -47,7 +46,7 @@ for store in config["stores"]:
             id SERIAL PRIMARY KEY,
             item_id TEXT,
             quantity INT,
-            created_at TIMESTAMP);
+            created_at TIMESTAMP DEFAULT now());
             """)
 
         print(f"Schema and tables successfully created for {store_id}.")

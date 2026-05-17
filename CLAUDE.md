@@ -1,4 +1,4 @@
-# CLAUDE.md — KPS Food Forecasting System
+# CLAUDE.md — KitchenSync Food Forecasting System
 
 This file is the authoritative reference for Claude Code. Read it in full before taking any action in this project.
 

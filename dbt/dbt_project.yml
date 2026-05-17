@@ -1,0 +1,28 @@
+
+name: 'kitchensync'
+version: '1.0.0'
+profile: 'kitchensync'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+
+# Full documentation: https://docs.getdbt.com/docs/configuring-models
+models:
+  kitchensync:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+    metrics:
+      +materialized: table

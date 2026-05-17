@@ -34,11 +34,10 @@ def create_sales_event(store_id: str, event: SalesEvent):
     cursor = connection.cursor()
 
     try:
-        # Insert based on columns names from variables from the events
         cursor.execute("""
-            INSERT into sales_events (item_id, quantity, price, hold_time)
-            VALUES (%s, %s, %s, %s);
-            """, (event.item_id, event.quantity, event.price, event.hold_time))
+            INSERT INTO sales_events (item_id, quantity, price)
+            VALUES (%s, %s, %s);
+        """, (event.item_id, event.quantity, event.price))
 
         close_and_commit(connection, cursor)
 
@@ -63,7 +62,7 @@ def create_waste_event(store_id: str, event: WasteEvent):
         cursor.execute("""
             INSERT into waste_log (item_id, quantity, reason)
             VALUES (%s, %s, %s);
-            """, (event.item_id, event.quantity, event.reason))
+        """, (event.item_id, event.quantity, event.reason))
 
         close_and_commit(connection, cursor)
         return {"status": "ok", "store_id": store_id}
@@ -83,7 +82,7 @@ def create_inventory_event(store_id: str, event: InventoryEvent):
         cursor.execute("""
             INSERT into inventory_snapshots (item_id, quantity)
             VALUES (%s, %s);
-            """, (event.item_id, event.quantity))
+        """, (event.item_id, event.quantity))
 
         close_and_commit(connection, cursor)
         return {"status": "ok", "store_id": store_id}

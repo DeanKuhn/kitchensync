@@ -4,8 +4,10 @@ items:
     # LUNCH HOT SPOT
   - id: "CHEESEBURGER"
     name: "Cheeseburger"
+    price: 2.99
+    sale_price: 1.99
     area: "hot_spot"
-    category: "lunch"
+    category: "all_day"
     hold_time: 2
     batch: 0 # 0 = no batch requirement
     active: true
@@ -13,8 +15,10 @@ items:
 
   - id: "CHICKEN_SANDWICH"
     name: "Chicken Sandwich"
+    price: 2.99
+    sale_price: 1.99
     area: "hot_spot"
-    category: "lunch"
+    category: "all_day"
     hold_time: 2
     batch: 0
     active: true
@@ -22,6 +26,8 @@ items:
 
   - id: "BREAK_STICKS"
     name: "Break Sticks"
+    price: 2.79
+    sale_price: 1.39
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -31,16 +37,20 @@ items:
 
   - id: "PIZZA_SLICE"
     name: "Pizza Slice"
+    price: 2.49
+    sale_price: 1.89
     area: "hot_spot"
     category: "lunch"
     hold_time: 1.5
-    batch: 3 # must b
+    batch: 3 # must be cooked in batches of 3
     active: true
     added: 2024-01-01
 
     # BREAKFAST HOT SPOT
   - id: "SAUSAGE_EGG_CROISSANT"
     name: "Sausage Egg Croissant"
+    price: 3.29
+    sale_price: 3.29
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -50,6 +60,8 @@ items:
 
   - id: "BACON_EGG_CROISSANT"
     name: "Bacon Egg Croissant"
+    price: 3.29
+    sale_price: 3.29
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -60,6 +72,8 @@ items:
     # BREAKFAST ROLLER GRILL
   - id: "EGG_ROLL"
     name: "Egg Roll"
+    price: 2.79
+    sale_price: 1.69
     area: "roller_grill"
     category: "all_day"
     hold_time: 4
@@ -69,6 +83,8 @@ items:
 
   - id: "SAUSAGE_EGG_TORNADO"
     name: "Sausage Egg Tornado"
+    price: 2.79
+    sale_price: 1.69
     area: "roller_grill"
     category: "breakfast"
     hold_time: 4
@@ -79,6 +95,8 @@ items:
     # LUNCH ROLLER GRILL
   - id: "HOT_DOG"
     name: "Hot Dog"
+    price: 2.79
+    sale_price: 1.69
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -88,6 +106,8 @@ items:
 
   - id: "BRAT"
     name: "Brat"
+    price: 2.79
+    sale_price: 1.69
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -98,8 +118,10 @@ items:
     # CHICKEN, NEW PROGRAM AS OF JUNE 2025
   - id: "2PC_WHITE_MEAT"
     name: "2 Pc White Meat"
-    area: "chicken"
-    category: "lunch"
+    price: 3.99
+    sale_price: 2.99
+    area: "hot_spot"
+    category: "chicken"
     hold_time: 3
     batch: 0
     active: true
@@ -107,8 +129,10 @@ items:
 
   - id: "2PC_DARK_MEAT"
     name: "2 Pc Dark Meat"
-    area: "chicken"
-    category: "lunch"
+    price: 3.99
+    sale_price: 2.99
+    area: "hot_spot"
+    category: "chicken"
     hold_time: 3
     batch: 0
     active: true
@@ -116,8 +140,10 @@ items:
 
   - id: "3PC_TENDERS"
     name: "3 Pc Tenders"
-    area: "chicken"
-    category: "lunch"
+    price: 6.49
+    sale_price: 4.99
+    area: "hot_spot"
+    category: "chicken"
     hold_time: 2
     batch: 0
     active: true
@@ -125,8 +151,10 @@ items:
 
   - id: "CHICKEN_POT_PIE"
     name: "Chicken Pot Pie"
-    area: "chicken"
-    category: "lunch"
+    price: 5.99
+    sale_price: 5.99
+    area: "hot_spot"
+    category: "chicken"
     hold_time: 4
     batch: 0
     active: false # Chicken pot pies were discontinued

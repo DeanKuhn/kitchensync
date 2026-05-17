@@ -1,4 +1,4 @@
-# KPS Food Forecasting System
+# KitchenSync Food Forecasting System
 
 A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS). The system uses a real-time data pipeline, a multi-store Postgres architecture, a dbt-powered Snowflake analytics warehouse, and a LightGBM forecasting model to produce per-store food production plans — refreshed every 5 minutes.
 
