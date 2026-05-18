@@ -22,22 +22,39 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
                                Per-store schemas
                                (transactional layer)
                                         │
+                               [extract_to_snowflake.py]
+                                        │
+                                        ▼
+                          [Snowflake — KS_DB.RAW]
+                                        │
                                [dbt Core pipeline]
                                         │
-                                        ▼
-                              [Snowflake Data Warehouse]
-                         stg_ → intermediate_ → mart_ → metrics_
-                                        │
-                               [Feature Engineering]
-                                        │
-                                        ▼
-                        [LightGBM Forecasting Model]
-                    (baseline: scikit-learn RandomForest)
-                                        │
-                                        ▼
-                          [Streamlit Dashboard]
-                      Per-store production plan (5-min refresh)
-                      Items labeled NORMAL or URGENT
+                          ┌─────────────┴─────────────┐
+                          ▼                           ▼
+                    KS_DB.STAGING            KS_DB.INTERMEDIATE
+                  stg_sales_events      int_sales__rolling_features
+                                      int_sales__time_of_day_profile
+                                                    │
+                                                    ▼
+                                            KS_DB.MARTS
+                                          mart_store_sales
+                                         mart_item_velocity
+                                                    │
+                                                    ▼
+                                           KS_DB.METRICS
+                                      metrics_forecast_accuracy
+                                        metrics_stockout_rate
+                                                    │
+                                          [Feature Engineering]
+                                                    │
+                                                    ▼
+                                [LightGBM Forecasting Model]
+                            (baseline: scikit-learn RandomForest)
+                                                    │
+                                                    ▼
+                                      [Streamlit Dashboard]
+                                Per-store production plan (5-min refresh)
+                                    Items labeled NORMAL or URGENT
 ```
 
 ---
@@ -46,7 +63,7 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 
 | Layer | Technology |
 |---|---|
-| Language | Python 3.11+ |
+| Language | Python 3.12+ |
 | Ingest API | FastAPI |
 | POS Simulation | Python script (randomized, time-aware) |
 | Transactional DB | Neon (cloud Postgres) — per-store schemas |
@@ -57,74 +74,81 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 | Dashboard | Streamlit |
 | Data formats | Parquet (feature export/archiving), CSV (seed data) |
 | Config | YAML (menu config, store config) |
-| Containerization | Dockerfile (reference only — not used in dev) |
-| Dev environment | VS Code + Claude Code |
+| Package Management | uv |
+| Dev environment | WSL, VS Code, Claude Code |
 
 ---
 
 ## Repository Structure
 
 ```
-kps-forecasting/
-├── CLAUDE.md                  # This file
-├── README.md                  # Public-facing project documentation
-├── Dockerfile                 # Reference only — not used in active dev
-├── .env.example               # Environment variable template
-├── requirements.txt
-├── pyproject.toml             # Optional: project metadata
+kitchensync/
+├── CLAUDE.md
+├── README.md
+├── Dockerfile                 # Reference only
+├── .env.example
+├── pyproject.toml             # uv project config (name, version, requires-python)
 │
 ├── config/
-│   ├── menu.yaml              # Food items, categories, active/inactive flags
-│   └── stores.yaml            # Store IDs, names, region metadata
+│   ├── menu.yaml              # Food items, areas, categories, hold times, active flags
+│   └── stores.yaml            # 12 stores across 4 regions with traffic levels
 │
 ├── data/
-│   ├── seeds/                 # dbt seed CSV files (historical baseline)
-│   └── exports/               # Parquet feature exports for ML
+│   ├── seeds/
+│   └── exports/
 │
 ├── simulator/
 │   ├── __init__.py
 │   ├── pos_simulator.py       # Fires fake POS events to the ingest API
-│   └── historical_generator.py # Generates synthetic historical dataset
+│   └── historical_generator.py # Generates ~2.7M synthetic events via psycopg2 batch inserts
 │
 ├── api/
 │   ├── __init__.py
 │   ├── main.py                # FastAPI app entry point
 │   ├── routes/
-│   │   └── sales.py           # POST /sale endpoint
+│   │   └── events.py          # POST endpoints: sales, waste, inventory
 │   ├── models/
-│   │   └── schemas.py         # Pydantic models for sale events
+│   │   └── schemas.py         # Pydantic models: SalesEvent, WasteEvent, InventoryEvent
 │   └── db/
-│       └── connection.py      # Neon/Postgres connection management
+│       └── connection.py      # Neon connection pool, get_store_connection() with search_path
 │
 ├── dbt/
-│   ├── dbt_project.yaml
-│   ├── profiles.yaml.example
-│   ├── seeds/                 # Historical data loaded into Snowflake
+│   ├── dbt_project.yml        # Model paths, materialization config, schema assignments
+│   ├── profiles.yml.example
+│   ├── macros/
+│   │   └── generate_schema_name.sql  # Overrides dbt schema prefixing behavior
 │   ├── models/
-│   │   ├── staging/           # stg_sales__*, stg_stores__*, stg_menu__*
-│   │   ├── intermediate/      # int_sales_hourly_*, int_rolling_features_*
-│   │   ├── marts/             # mart_store_sales, mart_item_velocity
-│   │   └── metrics/           # metrics_forecast_accuracy, metrics_stockout_rate
+│   │   ├── staging/
+│   │   │   ├── sources.yml           # Registers KS_DB.RAW.SALES_EVENTS as a dbt source
+│   │   │   └── stg_sales_events.sql  # Cleans/types raw events, derives sale_date/hour/dow
+│   │   ├── intermediate/
+│   │   │   ├── int_sales__rolling_features.sql      # Hourly aggregates + 1hr/4hr rolling sums
+│   │   │   └── int_sales__time_of_day_profile.sql   # Historical avg demand by store/item/hour/dow
+│   │   ├── marts/
+│   │   └── metrics/
 │   ├── tests/
-│   └── macros/
+│   ├── seeds/
+│   └── snapshots/
 │
 ├── ml/
 │   ├── __init__.py
-│   ├── features.py            # Feature engineering from mart/intermediate models
-│   ├── train.py               # Training pipeline (baseline + LightGBM)
-│   ├── predict.py             # Inference: produces next-hour production plan
-│   ├── evaluate.py            # MAE, RMSE, urgency precision/recall
-│   └── models/                # Serialized model artifacts (.pkl / .joblib)
+│   ├── features.py
+│   ├── train.py
+│   ├── predict.py
+│   ├── evaluate.py
+│   └── models/
 │
 ├── dashboard/
-│   ├── app.py                 # Streamlit entrypoint
+│   ├── app.py
 │   ├── components/
-│   │   ├── production_plan.py # Per-store production plan table
-│   │   └── store_selector.py  # Store dropdown
+│   │   ├── production_plan.py
+│   │   └── store_selector.py
 │   └── utils/
-│       └── data_fetch.py      # Pulls latest predictions from Snowflake/Postgres
+│       └── data_fetch.py
+│
 ├── scripts/
-│   └── init_db.py             # One-time setup script
+│   ├── init_db.py             # One-time Neon schema + table creation
+│   └── extract_to_snowflake.py # Full reload: Neon → KS_DB.RAW.SALES_EVENTS
 │
 └── tests/
     ├── test_api.py
@@ -134,106 +158,120 @@ kps-forecasting/
 
 ---
 
+## Current State
+
+### Completed
+- All 12 store schemas created in Neon with `sales_events`, `waste_log`, `inventory_snapshots` tables
+- FastAPI ingest API running with three endpoints (sales, waste, inventory)
+- Historical data generator producing ~2.7M events across 12 stores, 90 days (Jan–Mar 2026)
+- Snowflake provisioned: `KS_DB`, `KS_WH`, `RAW` schema
+- Extract script loading all Neon data into `KS_DB.RAW.SALES_EVENTS`
+- dbt project initialized, connected to Snowflake, `dbt debug` passing
+- `generate_schema_name` macro in place for clean schema separation
+- Staging model: `stg_sales_events` live in `KS_DB.STAGING`
+- Intermediate models: `int_sales__rolling_features` and `int_sales__time_of_day_profile` live in `KS_DB.INTERMEDIATE`
+
+### Next Up
+- Mart models: `mart_store_sales` (wide fact table joining all features)
+- Metrics models
+- ML feature engineering and model training
+
+---
+
 ## Database Design
 
 ### Neon (Postgres) — Transactional Layer
 
-Each store gets its own schema: `store_001`, `store_002`, ... `store_015`
+Each store gets its own schema: `store_012`, `store_027`, `store_034`, etc. (12 stores total)
 
 Within each schema:
 
 ```sql
--- sales_events: raw POS events written in real-time
-CREATE TABLE {store_schema}.sales_events (
-    id            SERIAL PRIMARY KEY,
-    store_id      TEXT NOT NULL,
-    item_id       TEXT NOT NULL,
-    quantity      INTEGER NOT NULL,
-    sale_ts       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    register_id   TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-A shared `public` schema holds reference tables:
-
-```sql
--- stores reference table
-CREATE TABLE public.stores (
-    store_id    TEXT PRIMARY KEY,
-    store_name  TEXT,
-    region      TEXT,
-    active      BOOLEAN DEFAULT TRUE
+CREATE TABLE {store_id}.sales_events (
+    id          SERIAL PRIMARY KEY,
+    item_id     TEXT,
+    quantity    INT,
+    price       NUMERIC(10, 2),
+    created_at  TIMESTAMP DEFAULT now()
 );
 
--- menu items reference table
-CREATE TABLE public.menu_items (
-    item_id     TEXT PRIMARY KEY,
-    item_name   TEXT,
-    category    TEXT,   -- 'sandwich', 'pizza', 'hot_food', etc.
-    active      BOOLEAN DEFAULT TRUE,
-    added_at    DATE,
-    removed_at  DATE
+CREATE TABLE {store_id}.waste_log (
+    id          SERIAL PRIMARY KEY,
+    item_id     TEXT,
+    quantity    INT,
+    reason      TEXT,
+    created_at  TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE {store_id}.inventory_snapshots (
+    id          SERIAL PRIMARY KEY,
+    item_id     TEXT,
+    quantity    INT,
+    created_at  TIMESTAMP DEFAULT now()
 );
 ```
 
 ### Snowflake — Analytics Layer
 
-Database: `KPS_DB`
+Database: `KS_DB`
+Warehouse: `KS_WH`
 Schemas: `RAW`, `STAGING`, `INTERMEDIATE`, `MARTS`, `METRICS`
 
-dbt writes to `STAGING` through `METRICS`. Raw data is synced from Neon via a lightweight Python sync job (or direct Snowflake connector).
+#### RAW.SALES_EVENTS
+```
+STORE_ID     VARCHAR
+ITEM_ID      VARCHAR
+QUANTITY     INTEGER
+PRICE        FLOAT
+CREATED_AT   TIMESTAMP
+```
 
 ---
 
 ## dbt Layer Design
 
-### Staging (`stg_`)
-- `stg_sales__events` — cleaned, typed sales events
-- `stg_stores__dim` — store dimension
-- `stg_menu__items` — menu dimension with active flag
+### Key Configuration Notes
+- Schema names are controlled via `+schema` in `dbt_project.yml`
+- The `generate_schema_name` macro in `dbt/macros/` prevents dbt from prefixing schema names with the default target schema (e.g. `PUBLIC_STAGING` → `STAGING`)
+- `profiles.yml` lives at `~/.dbt/profiles.yml` (outside the project), edit with `nano ~/.dbt/profiles.yml`
 
-### Intermediate (`int_`)
-- `int_sales__hourly_by_store_item` — sales aggregated by store + item + hour
-- `int_sales__rolling_features` — 30-min, 1hr, 4hr rolling sums per item per store
-- `int_sales__time_of_day_profile` — historical avg demand by hour/dow per item
+### Staging (`stg_`) — KS_DB.STAGING
+- `stg_sales_events` — cleans and types raw events; derives `sale_date`, `sale_hour` (0–23), `day_of_week` (0=Sunday, 6=Saturday); filters null `created_at`
 
-### Marts (`mart_`)
-- `mart_store_sales` — wide fact table: store + item + time features + rolling aggregates
+### Intermediate (`int_`) — KS_DB.INTERMEDIATE
+- `int_sales__rolling_features` — aggregates sales to hourly buckets, then computes 1hr and 4hr rolling sums using SQL window functions (`ROWS BETWEEN N PRECEDING AND CURRENT ROW`)
+- `int_sales__time_of_day_profile` — historical average quantity and sample size per store + item + day_of_week + sale_hour combination; used as baseline for urgency flag
+
+### Marts (`mart_`) — KS_DB.MARTS
+- `mart_store_sales` — wide fact table: store + item + time features + rolling aggregates (next to build)
 - `mart_item_velocity` — current sell-through rate vs. historical baseline
 
-### Metrics (`metrics_`)
+### Metrics (`metrics_`) — KS_DB.METRICS
 - `metrics_forecast_accuracy` — predicted vs. actual units (MAE, RMSE per item)
-- `metrics_stockout_rate` — how often urgent flag was triggered, and was it justified
+- `metrics_stockout_rate` — urgency flag trigger rate and justification tracking
 
 ---
 
-## Menu Configuration
+## dbt Commands Reference
 
-Defined in `config/menu.yaml`. Example structure:
+```bash
+cd dbt
 
-```yaml
-items:
-  - id: "HOT_DOG_REG"
-    name: "Regular Hot Dog"
-    category: "roller_grill"
-    active: true
-    added: "2023-01-01"
+# Run a single model
+uv run dbt run --select stg_sales_events
 
-  - id: "PIZZA_SLICE_CHEESE"
-    name: "Cheese Pizza Slice"
-    category: "pizza"
-    active: true
-    added: "2023-01-01"
+# Run multiple models
+uv run dbt run --select stg_sales_events int_sales__rolling_features
 
-  - id: "BRAT_CHEDDAR"
-    name: "Cheddar Brat"
-    category: "roller_grill"
-    active: false
-    removed: "2024-06-01"
+# Run all models
+uv run dbt run
+
+# Compile only (no Snowflake execution — fast syntax check)
+uv run dbt compile --select <model_name>
+
+# Run tests
+uv run dbt test
 ```
-
-Items with `active: false` are excluded from forecasting. New items with no history get a **cold-start fallback** — the model uses category-level averages until 7 days of data accumulates.
 
 ---
 
@@ -242,86 +280,55 @@ Items with `active: false` are excluded from forecasting. New items with no hist
 ### Input Features
 | Feature | Source |
 |---|---|
-| `hour_of_day` | Derived from sale timestamp |
-| `day_of_week` | Derived from sale timestamp |
-| `is_weekend` | Derived |
-| `rolling_30min_units` | `int_sales__rolling_features` |
+| `hour_of_day` | `stg_sales_events.sale_hour` |
+| `day_of_week` | `stg_sales_events.day_of_week` |
+| `is_weekend` | Derived (day_of_week in 0, 6) |
 | `rolling_1hr_units` | `int_sales__rolling_features` |
 | `rolling_4hr_units` | `int_sales__rolling_features` |
-| `avg_units_this_hour_dow` | `int_sales__time_of_day_profile` (historical) |
+| `avg_units_this_hour_dow` | `int_sales__time_of_day_profile` |
 | `store_id` (encoded) | Store dimension |
 | `item_id` (encoded) | Menu dimension |
-| `days_since_item_added` | New item cold-start feature |
+| `days_since_item_added` | Cold-start feature |
 
 ### Output
 - `predicted_units_next_1hr` — float, rounded to nearest integer for display
-- `urgency_flag` — `NORMAL` or `URGENT`
+- `urgency_flag` — `NORMAL` or `URGENT` (threshold: 1.4x historical average, configurable)
 
-**Urgency logic:** If current rolling sell-through rate exceeds the historical average for this hour by a configurable threshold (default: 1.4x), flag as `URGENT`.
-
-### Training
-1. Generate 12+ months of synthetic historical data via `historical_generator.py`
-2. Train baseline (scikit-learn RandomForest) — log metrics, serialize model
-3. Train LightGBM — log metrics, compare vs. baseline, serialize model
-4. Models are stored in `ml/models/` as `.joblib` files
+### Cold-Start Logic
+New items with fewer than 7 days of history fall back to category-level averages from `int_sales__time_of_day_profile`.
 
 ### Inference Cycle
-- Runs every 5 minutes via a scheduler (APScheduler or a simple cron loop)
-- Pulls latest rolling features from Snowflake (or Neon if Snowflake sync lags)
-- Produces a production plan per store
-- Writes results to a `predictions` table in Snowflake for the dashboard to consume
+Runs every 5 minutes. Pulls latest rolling features from Snowflake, produces production plan per store, writes results to a `predictions` table for the dashboard.
 
 ---
 
 ## Store Configuration
 
-Defined in `config/stores.yaml`. 10–15 stores. Example:
+12 stores across 4 regions, defined in `config/stores.yaml`:
 
-```yaml
-stores:
-  - id: "store_001"
-    name: "Madison East"
-    region: "South Wisconsin"
-    active: true
+| Region | Stores |
+|---|---|
+| West Wisconsin | store_012, store_027, store_034 |
+| South Wisconsin | store_056, store_061, store_078 |
+| Minnesota | store_091, store_103, store_115 |
+| Iowa | store_128, store_134, store_147 |
 
-  - id: "store_002"
-    name: "Eau Claire North"
-    region: "West Wisconsin"
-    active: true
-```
-
-Each store gets its own Postgres schema and is treated as an independent forecasting unit — demonstrating horizontal scalability.
+Traffic levels 1–4 control simulated sales volume. Hours are either `24/7` or `5am-11pm`.
 
 ---
 
-## Streamlit Dashboard
+## Menu Configuration
 
-**Purpose:** Show results, not impress visually. Functionality over form.
+Defined in `config/menu.yaml`. Fields: `id`, `name`, `price`, `sale_price`, `area`, `category`, `hold_time`, `batch`, `active`, `added`.
 
-**Views:**
-1. **Store selector** — dropdown to choose active store
-2. **Production Plan table** — refreshes every 5 minutes
-   - Columns: Item Name | Category | Predicted Units (Next 1hr) | Status
-   - Status is color-coded: green = NORMAL, red = URGENT
-3. **Rolling Sales chart** — simple line chart of last 2 hours per item (optional)
+Areas: `hot_spot`, `roller_grill`
+Categories: `all_day`, `breakfast`, `lunch`, `chicken`
 
-Dashboard reads from Snowflake `predictions` table and `mart_store_sales`.
-
----
-
-## Stretch Goals (Scoped, Not Guaranteed)
-
-| Goal | Status | Notes |
-|---|---|---|
-| Weather API feature | Stretch | Open-Meteo (free, no key needed) — add `temp_f` and `precip_mm` as model features |
-| Model retraining pipeline | Stretch | Weekly cron job re-trains on last 90 days of data, replaces model artifact if RMSE improves |
-| Docker containerization | Reference only | `Dockerfile` exists in repo root for reference; not used in active development |
+Items with `active: false` are excluded from forecasting. The chicken program (4 items) was added June 2025. `SAUSAGE_EGG_TORNADO` added July 2025. `CHICKEN_POT_PIE` discontinued.
 
 ---
 
 ## Environment Variables
-
-See `.env.example`. Required vars:
 
 ```
 # Neon (Postgres)
@@ -331,8 +338,8 @@ NEON_DATABASE_URL=postgresql://user:pass@host/dbname
 SNOWFLAKE_ACCOUNT=
 SNOWFLAKE_USER=
 SNOWFLAKE_PASSWORD=
-SNOWFLAKE_DATABASE=KPS_DB
-SNOWFLAKE_WAREHOUSE=
+SNOWFLAKE_DATABASE=KS_DB
+SNOWFLAKE_WAREHOUSE=KS_WH
 SNOWFLAKE_ROLE=
 
 # API
@@ -348,80 +355,54 @@ NUM_STORES=12
 
 ## Development Phases
 
-### Phase 1 — Foundation
-- [ ] Repo structure scaffolded
-- [ ] `config/menu.yaml` and `config/stores.yaml` created
-- [ ] Neon database provisioned, schemas created per store
-- [ ] FastAPI ingest API running locally, writing to Neon
-- [ ] POS simulator firing realistic events
+### Phase 1 — Foundation ✅
+- [x] Repo structure scaffolded
+- [x] `config/menu.yaml` and `config/stores.yaml` created
+- [x] Neon database provisioned, per-store schemas and tables created
+- [x] FastAPI ingest API running (sales, waste, inventory endpoints)
+- [x] Historical data generator (~2.7M events via psycopg2 batch inserts)
+- [x] POS simulator
 
-### Phase 2 — Data Pipeline
-- [ ] Historical data generator producing 12 months of synthetic data
-- [ ] Snowflake database and schemas provisioned
-- [ ] dbt project initialized, connected to Snowflake
-- [ ] Staging models complete and tested
-- [ ] Intermediate models complete (rolling features, time-of-day profiles)
-- [ ] Mart models complete
-- [ ] Metrics models stubbed
+### Phase 2 — Data Pipeline 🔄
+- [x] Snowflake provisioned (KS_DB, KS_WH)
+- [x] Extract script (Neon → KS_DB.RAW.SALES_EVENTS)
+- [x] dbt project initialized and connected to Snowflake
+- [x] `generate_schema_name` macro for clean schema separation
+- [x] Staging model (`stg_sales_events`)
+- [x] Intermediate models (`int_sales__rolling_features`, `int_sales__time_of_day_profile`)
+- [ ] Mart models (`mart_store_sales`, `mart_item_velocity`)
+- [ ] Metrics models
 
 ### Phase 3 — ML Model
-- [ ] Feature engineering script pulling from Snowflake marts
-- [ ] Baseline model trained and evaluated
-- [ ] LightGBM model trained, compared to baseline
-- [ ] Cold-start logic implemented for new menu items
-- [ ] Urgency flag logic implemented and tested
-- [ ] Inference loop running on 5-minute schedule
+- [ ] Feature engineering script
+- [ ] Baseline model (scikit-learn)
+- [ ] LightGBM model
+- [ ] Cold-start logic
+- [ ] Urgency flag logic
+- [ ] 5-minute inference loop
 
 ### Phase 4 — Dashboard
 - [ ] Streamlit app skeleton
-- [ ] Store selector wired to live data
-- [ ] Production plan table rendering with NORMAL/URGENT status
-- [ ] 5-minute auto-refresh working
+- [ ] Store selector
+- [ ] Production plan table (NORMAL / URGENT)
+- [ ] 5-minute auto-refresh
 
 ### Phase 5 — Polish & Stretch
-- [ ] README finalized with architecture diagram
+- [ ] README finalized
 - [ ] dbt metrics layer complete
 - [ ] Model retraining pipeline (stretch)
-- [ ] Weather feature integration (stretch)
-- [ ] Dockerfile present and documented
+- [ ] Weather feature (stretch)
+- [ ] Dockerfile documented
 
 ---
 
 ## Key Design Decisions
 
-1. **Per-store Postgres schemas over separate databases** — simpler connection management, still demonstrates schema-level isolation
-2. **FastAPI over direct DB writes from simulator** — demonstrates API-first design, more realistic to actual POS integrations
-3. **LightGBM over Prophet** — allows feature engineering showcase; Prophet is a black box for interviews
-4. **dbt Core (not Cloud)** — keeps it local/free, which is realistic for a dev environment
-5. **Config-file-driven menu** — mirrors real-world pattern where items can be toggled without code changes; cold-start logic handles new items gracefully
-6. **Snowflake as analytics layer** — separates concerns between transactional and analytical workloads; Neon handles writes, Snowflake handles reads for ML and dashboard
-
----
-
-## Commands Reference
-
-```bash
-# Start the ingest API
-uvicorn api.main:app --reload --port 8000
-
-# Run the POS simulator
-python simulator/pos_simulator.py
-
-# Generate historical data
-python simulator/historical_generator.py
-
-# Run dbt transformations
-cd dbt && dbt run
-
-# Run dbt tests
-cd dbt && dbt test
-
-# Train models
-python ml/train.py
-
-# Run inference (one cycle)
-python ml/predict.py --store store_001
-
-# Launch dashboard
-streamlit run dashboard/app.py
-```
+1. **Per-store Postgres schemas** — simpler connection management via `search_path`, demonstrates schema-level isolation
+2. **FastAPI over direct DB writes** — API-first design, more realistic to actual POS integrations
+3. **psycopg2 batch inserts for historical data** — `execute_values()` for bulk loading vs. one-request-per-event (100x+ faster)
+4. **LightGBM over Prophet** — allows feature engineering showcase; Prophet is a black box for interviews
+5. **dbt Core (not Cloud)** — local/free, realistic for a dev environment
+6. **`generate_schema_name` macro** — overrides dbt's default schema prefixing to produce clean `STAGING`, `INTERMEDIATE`, `MARTS`, `METRICS` schemas
+7. **Config-file-driven menu** — items toggled without code changes; cold-start logic handles new items
+8. **Snowflake as analytics layer** — separates transactional (Neon) and analytical (Snowflake) workloads

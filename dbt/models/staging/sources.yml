@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: raw
+    database: KS_DB
+    schema: raw
+    tables:
+      - name: sales_events
