@@ -17,9 +17,9 @@ profile as (
 ),
 
 
--- store_id | item_id | day_of_week | sale_hour | avg_quantity | sample_size
--- ---------+---------+-------------+-----------+--------------+------------
--- store_01 | HOT_DOG | 3           | 12        | 10           | 40
+-- store_id | item_id | day_of_week | sale_hour | avg_hourly_quantity | sample_size
+-- ---------+---------+-------------+-----------+---------------------+------------
+-- store_01 | HOT_DOG | 3           | 12        | 10                  | 40
 
 
 final as (
@@ -33,7 +33,7 @@ final as (
         r.hourly_quantity,
         r.rolling_2hr,
         r.rolling_4hr,
-        p.avg_quantity,
+        p.avg_hourly_quantity,
         p.sample_size
 
     from rolling r
@@ -49,6 +49,6 @@ final as (
 select * from final
 
 
--- ... | hourly_quantity | rolling_2hr | rolling_4hr | avg_quantity | sample_size
--- ----+-----------------+-------------+-------------+--------------+------------
---     | 12              | 18          | 40          | 10           | 40
+-- ... | hourly_quantity | rolling_2hr | rolling_4hr | avg_hourly_quantity | sample_size
+-- ----+-----------------+-------------+-------------+---------------------+------------
+--     | 12              | 18          | 40          | 10                  | 40

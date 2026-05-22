@@ -257,7 +257,7 @@ To retire an item, set `active: false`. Inactive items are excluded from forecas
 - [x] dbt project initialized and connected
 - [x] Staging model (`stg_sales_events`)
 - [x] Intermediate models (`int_sales__rolling_features`, `int_sales__time_of_day_profile`)
-- [ ] Mart models
+- [x] Mart models
 - [ ] Metrics models
 
 ### Phase 3 — ML Model
@@ -288,9 +288,3 @@ To retire an item, set `active: false`. Inactive items are excluded from forecas
 | Weather feature | Open-Meteo API (free) — temperature and precipitation as model inputs |
 | Auto-retraining pipeline | Weekly cron re-trains on last 90 days; replaces model if RMSE improves |
 | Docker reference | `Dockerfile` present for containerization reference; not used in dev |
-
----
-
-## Disclaimer
-
-This project is a personal portfolio simulation and is not affiliated with or endorsed by Kwik Trip, Inc. All store data, sales events, and food items are entirely synthetic.

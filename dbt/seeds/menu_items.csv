@@ -1,0 +1,15 @@
+item_id,name,area,category,active,added
+CHEESEBURGER,Cheeseburger,hot_spot,all_day,true,2024-01-01
+CHICKEN_SANDWICH,Chicken Sandwich,hot_spot,all_day,true,2024-01-01
+BREAK_STICKS,Break Sticks,hot_spot,lunch,true,2024-01-01
+PIZZA_SLICE,Pizza Slice,hot_spot,lunch,true,2024-01-01
+SAUSAGE_EGG_CROISSANT,Sausage Egg Croissant,hot_spot,breakfast,true,2024-01-01
+BACON_EGG_CROISSANT,Bacon Egg Croissant,hot_spot,breakfast,true,2024-01-01
+EGG_ROLL,Egg Roll,roller_grill,all_day,true,2024-01-01
+SAUSAGE_EGG_TORNADO,Sausage Egg Tornado,roller_grill,breakfast,true,2025-07-01
+HOT_DOG,Hot Dog,roller_grill,lunch,true,2024-01-01
+BRAT,Brat,roller_grill,lunch,true,2024-01-01
+2PC_WHITE_MEAT,2 Pc White Meat,hot_spot,chicken,true,2025-06-01
+2PC_DARK_MEAT,2 Pc Dark Meat,hot_spot,chicken,true,2025-06-01
+3PC_TENDERS,3 Pc Tenders,hot_spot,chicken,true,2025-06-01
+CHICKEN_POT_PIE,Chicken Pot Pie,hot_spot,chicken,false,2025-06-01

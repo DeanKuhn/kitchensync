@@ -1,10 +1,12 @@
 with latest_hour as (
 
     select
-        max(sale_date) as latest_date,
-        max(sale_hour) as latest_hour
+        sale_date as latest_date,
+        sale_hour as latest_hour
 
     from {{ ref('int_sales__rolling_features') }}
+    order by sale_date desc, sale_hour desc
+    limit 1
 
 ),
 
@@ -50,19 +52,19 @@ final as (
         cs.sale_date,
         cs.sale_hour,
         cs.rolling_2hr as current_units,
-        p.avg_quantity as baseline_units,
-        cs.rolling_2hr / nullif(p.avg_quantity, 0) as velocity_ratio,
+        p.avg_hourly_quantity as baseline_units,
+        cs.rolling_2hr / nullif(p.avg_hourly_quantity, 0) as velocity_ratio,
         case
-            when cs.rolling_2hr / nullif(p.avg_quantity, 0) >= 1.4
+            when cs.rolling_2hr / nullif(p.avg_hourly_quantity, 0) >= 1.4
             then 'URGENT' else 'NORMAL'
         end as urgency_flag
 
         from current_sales cs
         left join profile p
-            on cs.store_id = p.store_id
-            and cs.item_id = p.item_id
-            and cs.day_of_week = p.day_of_week
-            and cs.sale_hour = p.sale_hour
+            on cs.store_id      = p.store_id
+            and cs.item_id      = p.item_id
+            and cs.day_of_week  = p.day_of_week
+            and cs.sale_hour    = p.sale_hour
 
 )
 

@@ -6,6 +6,33 @@ with sales as (
 ),
 
 
+hourly as (
+
+    select
+        store_id,
+        item_id,
+        sale_date,
+        sale_hour,
+        day_of_week,
+        sum(quantity) as hourly_quantity
+
+    from sales
+
+    group by
+        store_id,
+        item_id,
+        sale_date,
+        sale_hour,
+        day_of_week
+
+),
+
+
+-- store_id | item_id | ... | hourly_quantity
+-- ---------+---------+-----+----------------
+-- store_01 | HOT_DOG | ... | 12
+
+
 profile as (
 
     select
@@ -13,13 +40,13 @@ profile as (
         item_id,
         day_of_week,
         sale_hour,
-        avg(quantity) as avg_quantity,
+        avg(hourly_quantity) as avg_hourly_quantity,
 
         -- sample_size is the count of how many data points went
         -- into each average
         count(*) as sample_size
 
-    from sales
+    from hourly
 
     group by
         store_id,

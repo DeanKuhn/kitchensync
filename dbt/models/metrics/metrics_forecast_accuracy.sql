@@ -1,0 +1,4 @@
+-- Compares predicted units from ml_predictions table against
+-- actual units from mart_store_sales.
+-- Computes MAE and RMSE per store + item.
+-- Depends on: mart_store_sales, ml_predictions (Phase 3)
