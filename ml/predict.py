@@ -4,7 +4,7 @@
 import joblib
 import pandas as pd
 
-from ml.features import get_snowflake_connection
+from ml.features import get_snowflake_connection, get_snowflake_engine
 
 COLD_START_THRESHOLD = 4
 
@@ -162,6 +162,14 @@ if __name__ == "__main__":
 
     print(f"Running inference for {len(df)} store/item combinations...")
     production_plan = predict(df, df_cold_start)
+
+    # Get Snowflake engine created in features.py
+    engine = get_snowflake_engine()
+
+    # Add timestamp, and make sure to append so previous predictions can be
+    # observed and learned from
+    production_plan['predicted_at'] = pd.Timestamp.now()
+    production_plan.to_sql('predictions', engine, if_exists='append', index=False)
 
     print("\n--- PRODUCTION PLAN ---")
     print(production_plan.to_string(index=False))

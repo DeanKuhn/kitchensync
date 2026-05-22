@@ -8,6 +8,8 @@ dependencies = [
     "pandas>=3.0.3",
     "scikit-learn>=1.8.0",
     "snowflake-connector-python>=4.5.0",
+    "snowflake-sqlalchemy>=1.10.0",
+    "streamlit>=1.57.0",
 ]
 
 [dependency-groups]
