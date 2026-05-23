@@ -6,3 +6,9 @@ sources:
     schema: raw
     tables:
       - name: sales_events
+
+  - name: marts
+    database: KS_DB
+    schema: marts
+    tables:
+      - name: predictions
