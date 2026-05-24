@@ -1,8 +1,6 @@
 # Per-store production plan table
 
-
 import streamlit as st # type:ignore
-
 
 # Make urgent rows red
 def highlight_urgency(row):

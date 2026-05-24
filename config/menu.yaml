@@ -6,6 +6,7 @@ items:
     name: "Cheeseburger"
     price: 2.99
     sale_price: 1.99
+    cost: 1.20
     area: "hot_spot"
     category: "all_day"
     hold_time: 2
@@ -18,6 +19,7 @@ items:
     name: "Chicken Sandwich"
     price: 2.99
     sale_price: 1.99
+    cost: 1.25
     area: "hot_spot"
     category: "all_day"
     hold_time: 2
@@ -31,6 +33,7 @@ items:
     name: "Sausage Egg Croissant"
     price: 3.29
     sale_price: 3.29
+    cost: 1.30
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -43,6 +46,7 @@ items:
     name: "Bacon Egg Croissant"
     price: 3.29
     sale_price: 3.29
+    cost: 1.35
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -55,6 +59,7 @@ items:
     name: "Ham Croissant"
     price: 3.29
     sale_price: 3.29
+    cost: 1.20
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -67,6 +72,7 @@ items:
     name: "Western Omelette Croissant"
     price: 3.29
     sale_price: 3.29
+    cost: 1.40
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -79,6 +85,7 @@ items:
     name: "Sausage Biscuit"
     price: 2.49
     sale_price: 1.49
+    cost: 0.90
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2
@@ -91,6 +98,7 @@ items:
     name: "Waffle Sausage Sandwich"
     price: 2.99
     sale_price: 1.99
+    cost: 1.10
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2
@@ -103,6 +111,7 @@ items:
     name: "Hash Browns"
     price: 1.99
     sale_price: 0.99
+    cost: 0.60
     area: "hot_spot"
     category: "breakfast"
     hold_time: 2.5
@@ -115,6 +124,7 @@ items:
     name: "Sausage Egg Burrito"
     price: 2.79
     sale_price: 1.79
+    cost: 1.10
     area: "hot_spot"
     category: "breakfast"
     hold_time: 3
@@ -127,6 +137,7 @@ items:
     name: "Chimi"
     price: 2.79
     sale_price: 1.79
+    cost: 1.00
     area: "hot_spot"
     category: "breakfast"
     hold_time: 3
@@ -140,6 +151,7 @@ items:
     name: "Egg Roll"
     price: 2.79
     sale_price: 1.69
+    cost: 0.80
     area: "roller_grill"
     category: "all_day"
     hold_time: 4
@@ -152,6 +164,7 @@ items:
     name: "Sausage Egg Tornado"
     price: 2.79
     sale_price: 1.69
+    cost: 0.90
     area: "roller_grill"
     category: "breakfast"
     hold_time: 4
@@ -164,6 +177,7 @@ items:
     name: "French Toast Tornado"
     price: 2.79
     sale_price: 1.69
+    cost: 0.85
     area: "roller_grill"
     category: "breakfast"
     hold_time: 4
@@ -177,6 +191,7 @@ items:
     name: "Break Sticks"
     price: 2.79
     sale_price: 1.39
+    cost: 0.90
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -189,6 +204,7 @@ items:
     name: "Pizza Slice"
     price: 2.49
     sale_price: 1.89
+    cost: 0.85
     area: "hot_spot"
     category: "lunch"
     hold_time: 1.5
@@ -201,6 +217,7 @@ items:
     name: "Grilled Cheese"
     price: 2.49
     sale_price: 1.49
+    cost: 0.70
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -213,6 +230,7 @@ items:
     name: "Bacon Cheeseburger"
     price: 3.49
     sale_price: 2.49
+    cost: 1.50
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -225,6 +243,7 @@ items:
     name: "Mushroom Swiss Burger"
     price: 3.49
     sale_price: 2.49
+    cost: 1.45
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -237,6 +256,7 @@ items:
     name: "Pretzel Bun Burger"
     price: 3.49
     sale_price: 2.49
+    cost: 1.45
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -249,6 +269,7 @@ items:
     name: "Rib Sandwich"
     price: 2.99
     sale_price: 1.99
+    cost: 1.30
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -261,6 +282,7 @@ items:
     name: "Corn Dog"
     price: 1.99
     sale_price: 0.99
+    cost: 0.65
     area: "hot_spot"
     category: "lunch"
     hold_time: 2
@@ -273,6 +295,7 @@ items:
     name: "Sausage Burrito"
     price: 2.49
     sale_price: 1.49
+    cost: 0.95
     area: "hot_spot"
     category: "lunch"
     hold_time: 3
@@ -285,6 +308,7 @@ items:
     name: "Pepperoni Burrito"
     price: 2.49
     sale_price: 1.49
+    cost: 0.90
     area: "hot_spot"
     category: "lunch"
     hold_time: 3
@@ -298,6 +322,7 @@ items:
     name: "Hot Dog"
     price: 2.79
     sale_price: 1.69
+    cost: 0.75
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -310,6 +335,7 @@ items:
     name: "Brat"
     price: 2.79
     sale_price: 1.69
+    cost: 0.95
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -322,6 +348,7 @@ items:
     name: "Cheddarwurst"
     price: 2.79
     sale_price: 1.69
+    cost: 0.95
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -334,6 +361,7 @@ items:
     name: "Pepperjack Tornado"
     price: 2.79
     sale_price: 1.69
+    cost: 0.85
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -346,6 +374,7 @@ items:
     name: "Steak Ranchero Tornado"
     price: 2.79
     sale_price: 1.69
+    cost: 1.00
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -358,6 +387,7 @@ items:
     name: "Buffalo Chicken Rollerbites"
     price: 2.79
     sale_price: 1.69
+    cost: 0.95
     area: "roller_grill"
     category: "lunch"
     hold_time: 4
@@ -371,6 +401,7 @@ items:
     name: "2 Pc White Meat"
     price: 3.99
     sale_price: 2.99
+    cost: 1.80
     area: "hot_spot"
     category: "chicken"
     hold_time: 3
@@ -383,6 +414,7 @@ items:
     name: "2 Pc Dark Meat"
     price: 3.99
     sale_price: 2.99
+    cost: 1.60
     area: "hot_spot"
     category: "chicken"
     hold_time: 3
@@ -395,6 +427,7 @@ items:
     name: "3 Pc Tenders"
     price: 6.49
     sale_price: 4.99
+    cost: 2.80
     area: "hot_spot"
     category: "chicken"
     hold_time: 2
@@ -407,6 +440,7 @@ items:
     name: "Chicken Quesadilla"
     price: 4.99
     sale_price: 3.99
+    cost: 2.00
     area: "hot_spot"
     category: "chicken"
     hold_time: 2
@@ -419,6 +453,7 @@ items:
     name: "8 Pc Bone-In"
     price: 15.00
     sale_price: 10.00
+    cost: 6.50
     area: "hot_spot"
     category: "chicken"
     hold_time: 3
@@ -431,6 +466,7 @@ items:
     name: "8 Pc Tenders"
     price: 12.99
     sale_price: 9.99
+    cost: 5.50
     area: "hot_spot"
     category: "chicken"
     hold_time: 2
@@ -443,6 +479,7 @@ items:
     name: "Whole Bird"
     price: 9.00
     sale_price: 7.00
+    cost: 4.00
     area: "hot_spot"
     category: "chicken"
     hold_time: 4
@@ -456,6 +493,7 @@ items:
     name: "Boneless Wings"
     price: 6.99
     sale_price: 4.99
+    cost: 2.80
     area: "hot_spot"
     category: "appetizers"
     hold_time: 1.5
@@ -468,6 +506,7 @@ items:
     name: "Mozzarella Sticks"
     price: 3.99
     sale_price: 2.99
+    cost: 1.30
     area: "hot_spot"
     category: "appetizers"
     hold_time: 1.5
@@ -480,6 +519,7 @@ items:
     name: "Mini Tacos"
     price: 3.49
     sale_price: 2.49
+    cost: 1.10
     area: "hot_spot"
     category: "appetizers"
     hold_time: 1.5
@@ -492,6 +532,7 @@ items:
     name: "Cheese Curds"
     price: 3.49
     sale_price: 2.49
+    cost: 1.20
     area: "hot_spot"
     category: "appetizers"
     hold_time: 1.5
@@ -504,6 +545,7 @@ items:
     name: "Jalapeno Bites"
     price: 3.49
     sale_price: 2.49
+    cost: 1.10
     area: "hot_spot"
     category: "appetizers"
     hold_time: 1.5
@@ -516,6 +558,7 @@ items:
     name: "Fried Pickles"
     price: 3.49
     sale_price: 2.49
+    cost: 0.90
     area: "hot_spot"
     category: "appetizers"
     hold_time: 1.5
@@ -529,6 +572,7 @@ items:
     name: "Mac and Cheese"
     price: 2.99
     sale_price: 1.99
+    cost: 0.90
     area: "hot_spot"
     category: "sides"
     hold_time: 4
@@ -541,6 +585,7 @@ items:
     name: "Mashed Potatoes & Gravy"
     price: 2.99
     sale_price: 1.99
+    cost: 0.85
     area: "hot_spot"
     category: "sides"
     hold_time: 4
@@ -553,6 +598,7 @@ items:
     name: "Chicken Pot Pie"
     price: 5.99
     sale_price: 5.99
+    cost: 2.50
     area: "hot_spot"
     category: "chicken"
     hold_time: 4
