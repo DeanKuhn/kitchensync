@@ -1,15 +1,47 @@
 item_id,name,area,category,active,added
 CHEESEBURGER,Cheeseburger,hot_spot,all_day,true,2024-01-01
 CHICKEN_SANDWICH,Chicken Sandwich,hot_spot,all_day,true,2024-01-01
-BREAK_STICKS,Break Sticks,hot_spot,lunch,true,2024-01-01
-PIZZA_SLICE,Pizza Slice,hot_spot,lunch,true,2024-01-01
 SAUSAGE_EGG_CROISSANT,Sausage Egg Croissant,hot_spot,breakfast,true,2024-01-01
 BACON_EGG_CROISSANT,Bacon Egg Croissant,hot_spot,breakfast,true,2024-01-01
+HAM_CROISSANT,Ham Croissant,hot_spot,breakfast,true,2024-01-01
+WESTERN_OMELETTE_CROISSANT,Western Omelette Croissant,hot_spot,breakfast,true,2024-01-01
+SAUSAGE_BISCUIT,Sausage Biscuit,hot_spot,breakfast,true,2024-01-01
+WAFFLE_SAUSAGE_SANDWICH,Waffle Sausage Sandwich,hot_spot,breakfast,true,2024-01-01
+HASH_BROWNS,Hash Browns,hot_spot,breakfast,true,2024-01-01
+SAUSAGE_EGG_BURRITO,Sausage Egg Burrito,hot_spot,breakfast,true,2024-01-01
+CHIMI,Chimi,hot_spot,breakfast,true,2026-02-12
 EGG_ROLL,Egg Roll,roller_grill,all_day,true,2024-01-01
 SAUSAGE_EGG_TORNADO,Sausage Egg Tornado,roller_grill,breakfast,true,2025-07-01
+FRENCH_TOAST_TORNADO,French Toast Tornado,roller_grill,breakfast,true,2024-01-01
+BREAK_STICKS,Break Sticks,hot_spot,lunch,true,2024-01-01
+PIZZA_SLICE,Pizza Slice,hot_spot,lunch,true,2024-01-01
+GRILLED_CHEESE,Grilled Cheese,hot_spot,lunch,true,2024-01-01
+BACON_CHEESEBURGER,Bacon Cheeseburger,hot_spot,lunch,true,2024-01-01
+MUSHROOM_SWISS_BURGER,Mushroom Swiss Burger,hot_spot,lunch,true,2024-01-01
+PRETZEL_BUN_BURGER,Pretzel Bun Burger,hot_spot,lunch,true,2024-01-01
+RIB_SANDWICH,Rib Sandwich,hot_spot,lunch,true,2024-01-01
+CORN_DOG,Corn Dog,hot_spot,lunch,true,2024-01-01
+SAUSAGE_BURRITO,Sausage Burrito,hot_spot,lunch,true,2024-01-01
+PEPPERONI_BURRITO,Pepperoni Burrito,hot_spot,lunch,true,2024-01-01
 HOT_DOG,Hot Dog,roller_grill,lunch,true,2024-01-01
 BRAT,Brat,roller_grill,lunch,true,2024-01-01
+CHEDDARWURST,Cheddarwurst,roller_grill,lunch,true,2024-01-01
+PEPPERJACK_TORNADO,Pepperjack Tornado,roller_grill,lunch,true,2024-01-01
+STEAK_RANCHERO_TORNADO,Steak Ranchero Tornado,roller_grill,lunch,true,2024-01-01
+BUFFALO_CHICKEN_ROLLERBITES,Buffalo Chicken Rollerbites,roller_grill,lunch,true,2026-02-12
 2PC_WHITE_MEAT,2 Pc White Meat,hot_spot,chicken,true,2025-06-01
 2PC_DARK_MEAT,2 Pc Dark Meat,hot_spot,chicken,true,2025-06-01
 3PC_TENDERS,3 Pc Tenders,hot_spot,chicken,true,2025-06-01
+CHICKEN_QUESADILLA,Chicken Quesadilla,hot_spot,chicken,true,2025-06-01
+8PC_BONE_IN,8 Pc Bone-In,hot_spot,chicken,true,2025-06-01
+8PC_TENDERS,8 Pc Tenders,hot_spot,chicken,true,2025-06-01
+WHOLE_BIRD,Whole Bird,hot_spot,chicken,true,2025-06-01
+BONELESS_WINGS,Boneless Wings,hot_spot,appetizers,true,2025-06-01
+MOZZARELLA_STICKS,Mozzarella Sticks,hot_spot,appetizers,true,2025-06-01
+MINI_TACOS,Mini Tacos,hot_spot,appetizers,true,2025-06-01
+CHEESE_CURDS,Cheese Curds,hot_spot,appetizers,true,2025-06-01
+JALAPENO_BITES,Jalapeno Bites,hot_spot,appetizers,true,2026-02-12
+FRIED_PICKLES,Fried Pickles,hot_spot,appetizers,true,2025-06-01
+MAC_AND_CHEESE,Mac and Cheese,hot_spot,sides,true,2025-06-01
+MASHED_POTATOES_GRAVY,Mashed Potatoes & Gravy,hot_spot,sides,true,2025-06-01
 CHICKEN_POT_PIE,Chicken Pot Pie,hot_spot,chicken,false,2025-06-01

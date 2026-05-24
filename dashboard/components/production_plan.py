@@ -2,7 +2,6 @@
 
 
 import streamlit as st # type:ignore
-from dashboard.utils.data_fetch import get_production_plan
 
 
 # Make urgent rows red

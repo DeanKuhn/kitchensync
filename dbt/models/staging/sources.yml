@@ -6,6 +6,7 @@ sources:
     schema: raw
     tables:
       - name: sales_events
+      - name: waste_log
 
   - name: marts
     database: KS_DB

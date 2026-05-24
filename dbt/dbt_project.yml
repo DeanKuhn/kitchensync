@@ -30,3 +30,6 @@ models:
     metrics:
       +materialized: table
       +schema: metrics
+
+vars:
+  urgency_threshold: 2.0

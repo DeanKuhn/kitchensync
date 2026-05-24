@@ -55,7 +55,8 @@ final as (
         p.avg_hourly_quantity as baseline_units,
         cs.rolling_2hr / nullif(p.avg_hourly_quantity, 0) as velocity_ratio,
         case
-            when cs.rolling_2hr / nullif(p.avg_hourly_quantity, 0) >= 1.4
+            when (cs.rolling_2hr / nullif(p.avg_hourly_quantity, 0)) >=
+                {{ var('urgency_threshold') }}
             then 'URGENT' else 'NORMAL'
         end as urgency_flag
 
@@ -74,4 +75,4 @@ select * from final
 
 -- ... | current_units | baseline_units | velocity_ratio | urgency_flag
 -- ----+---------------+----------------+----------------+-------------
---     | 18            | 12             | 1.5            | URGENT
+--     | 18            | 12             | 2.0            | URGENT

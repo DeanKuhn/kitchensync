@@ -92,7 +92,7 @@ def get_cold_start_profiles():
     return df
 
 
-def predict(df, df_cold_start):
+def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
 
     df_warm = df[df['sample_size'] >= COLD_START_THRESHOLD]
     df_cold = df[df['sample_size'] < COLD_START_THRESHOLD]
@@ -137,7 +137,7 @@ def predict(df, df_cold_start):
     df_cold = df_cold.merge(df_cold_start[['category', 'category_avg']],
                             on='category')
 
-    df_cold['predicted_units'] = df_cold['avg_hourly_quantity'].round().astype(int)
+    df_cold['predicted_units'] = df_cold['category_avg'].round().astype(int)
     df_cold['urgency_flag'] = 'NORMAL'
 
 
@@ -161,7 +161,8 @@ if __name__ == "__main__":
     df_cold_start = get_cold_start_profiles()
 
     print(f"Running inference for {len(df)} store/item combinations...")
-    production_plan = predict(df, df_cold_start)
+    production_plan = \
+        predict(df, df_cold_start, lgbm, store_encoder, item_encoder)
 
     # Get Snowflake engine created in features.py
     engine = get_snowflake_engine()

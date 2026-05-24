@@ -10,6 +10,7 @@ items:
     category: "all_day"
     hold_time: 2
     batch: 0 # 0 = no batch requirement
+    popularity: 5
     active: true
     added: 2024-01-01
 
@@ -21,28 +22,7 @@ items:
     category: "all_day"
     hold_time: 2
     batch: 0
-    active: true
-    added: 2024-01-01
-
-  - id: "BREAK_STICKS"
-    name: "Break Sticks"
-    price: 2.79
-    sale_price: 1.39
-    area: "hot_spot"
-    category: "lunch"
-    hold_time: 2
-    batch: 0
-    active: true
-    added: 2024-01-01
-
-  - id: "PIZZA_SLICE"
-    name: "Pizza Slice"
-    price: 2.49
-    sale_price: 1.89
-    area: "hot_spot"
-    category: "lunch"
-    hold_time: 1.5
-    batch: 3 # must be cooked in batches of 3
+    popularity: 4
     active: true
     added: 2024-01-01
 
@@ -55,6 +35,7 @@ items:
     category: "breakfast"
     hold_time: 2.5
     batch: 0
+    popularity: 5
     active: true
     added: 2024-01-01
 
@@ -66,8 +47,93 @@ items:
     category: "breakfast"
     hold_time: 2.5
     batch: 0
+    popularity: 4
     active: true
     added: 2024-01-01
+
+  - id: "HAM_CROISSANT"
+    name: "Ham Croissant"
+    price: 3.29
+    sale_price: 3.29
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2.5
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "WESTERN_OMELETTE_CROISSANT"
+    name: "Western Omelette Croissant"
+    price: 3.29
+    sale_price: 3.29
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2.5
+    batch: 0
+    popularity: 2
+    active: true
+    added: 2024-01-01
+
+  - id: "SAUSAGE_BISCUIT"
+    name: "Sausage Biscuit"
+    price: 2.49
+    sale_price: 1.49
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "WAFFLE_SAUSAGE_SANDWICH"
+    name: "Waffle Sausage Sandwich"
+    price: 2.99
+    sale_price: 1.99
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "HASH_BROWNS"
+    name: "Hash Browns"
+    price: 1.99
+    sale_price: 0.99
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 2.5
+    batch: 0
+    popularity: 4
+    active: true
+    added: 2024-01-01
+
+  - id: "SAUSAGE_EGG_BURRITO"
+    name: "Sausage Egg Burrito"
+    price: 2.79
+    sale_price: 1.79
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 3
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "CHIMI"
+    name: "Chimi"
+    price: 2.79
+    sale_price: 1.79
+    area: "hot_spot"
+    category: "breakfast"
+    hold_time: 3
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2026-02-12
 
     # BREAKFAST ROLLER GRILL
   - id: "EGG_ROLL"
@@ -78,6 +144,7 @@ items:
     category: "all_day"
     hold_time: 4
     batch: 0
+    popularity: 3
     active: true
     added: 2024-01-01
 
@@ -89,8 +156,142 @@ items:
     category: "breakfast"
     hold_time: 4
     batch: 0
+    popularity: 4
     active: true
     added: 2025-07-01 # New item, started July 2025
+
+  - id: "FRENCH_TOAST_TORNADO"
+    name: "French Toast Tornado"
+    price: 2.79
+    sale_price: 1.69
+    area: "roller_grill"
+    category: "breakfast"
+    hold_time: 4
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+    # LUNCH HOT SPOT
+  - id: "BREAK_STICKS"
+    name: "Break Sticks"
+    price: 2.79
+    sale_price: 1.39
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "PIZZA_SLICE"
+    name: "Pizza Slice"
+    price: 2.49
+    sale_price: 1.89
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 1.5
+    batch: 3 # must be cooked in batches of 3
+    popularity: 5
+    active: true
+    added: 2024-01-01
+
+  - id: "GRILLED_CHEESE"
+    name: "Grilled Cheese"
+    price: 2.49
+    sale_price: 1.49
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "BACON_CHEESEBURGER"
+    name: "Bacon Cheeseburger"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 4
+    active: true
+    added: 2024-01-01
+
+  - id: "MUSHROOM_SWISS_BURGER"
+    name: "Mushroom Swiss Burger"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "PRETZEL_BUN_BURGER"
+    name: "Pretzel Bun Burger"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "RIB_SANDWICH"
+    name: "Rib Sandwich"
+    price: 2.99
+    sale_price: 1.99
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "CORN_DOG"
+    name: "Corn Dog"
+    price: 1.99
+    sale_price: 0.99
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 2
+    batch: 0
+    popularity: 4
+    active: true
+    added: 2024-01-01
+
+  - id: "SAUSAGE_BURRITO"
+    name: "Sausage Burrito"
+    price: 2.49
+    sale_price: 1.49
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 3
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "PEPPERONI_BURRITO"
+    name: "Pepperoni Burrito"
+    price: 2.49
+    sale_price: 1.49
+    area: "hot_spot"
+    category: "lunch"
+    hold_time: 3
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
 
     # LUNCH ROLLER GRILL
   - id: "HOT_DOG"
@@ -101,6 +302,7 @@ items:
     category: "lunch"
     hold_time: 4
     batch: 0
+    popularity: 5
     active: true
     added: 2024-01-01
 
@@ -112,8 +314,57 @@ items:
     category: "lunch"
     hold_time: 4
     batch: 0
+    popularity: 4
     active: true
     added: 2024-01-01
+
+  - id: "CHEDDARWURST"
+    name: "Cheddarwurst"
+    price: 2.79
+    sale_price: 1.69
+    area: "roller_grill"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "PEPPERJACK_TORNADO"
+    name: "Pepperjack Tornado"
+    price: 2.79
+    sale_price: 1.69
+    area: "roller_grill"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "STEAK_RANCHERO_TORNADO"
+    name: "Steak Ranchero Tornado"
+    price: 2.79
+    sale_price: 1.69
+    area: "roller_grill"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2024-01-01
+
+  - id: "BUFFALO_CHICKEN_ROLLERBITES"
+    name: "Buffalo Chicken Rollerbites"
+    price: 2.79
+    sale_price: 1.69
+    area: "roller_grill"
+    category: "lunch"
+    hold_time: 4
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2026-02-12
 
     # CHICKEN, NEW PROGRAM AS OF JUNE 2025
   - id: "2PC_WHITE_MEAT"
@@ -124,6 +375,7 @@ items:
     category: "chicken"
     hold_time: 3
     batch: 0
+    popularity: 4
     active: true
     added: 2025-06-01
 
@@ -135,6 +387,7 @@ items:
     category: "chicken"
     hold_time: 3
     batch: 0
+    popularity: 3
     active: true
     added: 2025-06-01
 
@@ -146,6 +399,153 @@ items:
     category: "chicken"
     hold_time: 2
     batch: 0
+    popularity: 4
+    active: true
+    added: 2025-06-01
+
+  - id: "CHICKEN_QUESADILLA"
+    name: "Chicken Quesadilla"
+    price: 4.99
+    sale_price: 3.99
+    area: "hot_spot"
+    category: "chicken"
+    hold_time: 2
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2025-06-01
+
+  - id: "8PC_BONE_IN"
+    name: "8 Pc Bone-In"
+    price: 15.00
+    sale_price: 10.00
+    area: "hot_spot"
+    category: "chicken"
+    hold_time: 3
+    batch: 0
+    popularity: 2
+    active: true
+    added: 2025-06-01
+
+  - id: "8PC_TENDERS"
+    name: "8 Pc Tenders"
+    price: 12.99
+    sale_price: 9.99
+    area: "hot_spot"
+    category: "chicken"
+    hold_time: 2
+    batch: 0
+    popularity: 2
+    active: true
+    added: 2025-06-01
+
+  - id: "WHOLE_BIRD"
+    name: "Whole Bird"
+    price: 9.00
+    sale_price: 7.00
+    area: "hot_spot"
+    category: "chicken"
+    hold_time: 4
+    batch: 0
+    popularity: 1
+    active: true
+    added: 2025-06-01
+
+    # APPETIZERS
+  - id: "BONELESS_WINGS"
+    name: "Boneless Wings"
+    price: 6.99
+    sale_price: 4.99
+    area: "hot_spot"
+    category: "appetizers"
+    hold_time: 1.5
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2025-06-01
+
+  - id: "MOZZARELLA_STICKS"
+    name: "Mozzarella Sticks"
+    price: 3.99
+    sale_price: 2.99
+    area: "hot_spot"
+    category: "appetizers"
+    hold_time: 1.5
+    batch: 0
+    popularity: 4
+    active: true
+    added: 2025-06-01
+
+  - id: "MINI_TACOS"
+    name: "Mini Tacos"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "appetizers"
+    hold_time: 1.5
+    batch: 0
+    popularity: 4
+    active: true
+    added: 2025-06-01
+
+  - id: "CHEESE_CURDS"
+    name: "Cheese Curds"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "appetizers"
+    hold_time: 1.5
+    batch: 0
+    popularity: 4
+    active: true
+    added: 2025-06-01
+
+  - id: "JALAPENO_BITES"
+    name: "Jalapeno Bites"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "appetizers"
+    hold_time: 1.5
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2026-02-12
+
+  - id: "FRIED_PICKLES"
+    name: "Fried Pickles"
+    price: 3.49
+    sale_price: 2.49
+    area: "hot_spot"
+    category: "appetizers"
+    hold_time: 1.5
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2025-06-01
+
+    # SIDES
+  - id: "MAC_AND_CHEESE"
+    name: "Mac and Cheese"
+    price: 2.99
+    sale_price: 1.99
+    area: "hot_spot"
+    category: "sides"
+    hold_time: 4
+    batch: 0
+    popularity: 3
+    active: true
+    added: 2025-06-01
+
+  - id: "MASHED_POTATOES_GRAVY"
+    name: "Mashed Potatoes & Gravy"
+    price: 2.99
+    sale_price: 1.99
+    area: "hot_spot"
+    category: "sides"
+    hold_time: 4
+    batch: 0
+    popularity: 2
     active: true
     added: 2025-06-01
 
@@ -157,5 +557,6 @@ items:
     category: "chicken"
     hold_time: 4
     batch: 0
+    popularity: 1
     active: false # Chicken pot pies were discontinued
     added: 2025-06-01

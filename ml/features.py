@@ -57,7 +57,7 @@ def load_features():
             sample_size
 
         from MARTS.MART_STORE_SALES
-        where sample_size >= 10
+        where sample_size >= 4
     """
 
     df = pd.read_sql(query, connection)

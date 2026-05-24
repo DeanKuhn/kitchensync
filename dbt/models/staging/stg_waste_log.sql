@@ -1,7 +1,7 @@
 with source as (
 
     -- First get the source using Jinja formatting
-    select * from {{ source('raw', 'sales_events') }}
+    select * from {{ source('raw', 'waste_log') }}
 
 ),
 
@@ -12,15 +12,12 @@ cleaned as (
         store_id,
         item_id,
         quantity::integer       as quantity,
-        price::float            as price,
+        reason,
         created_at::timestamp   as created_at,
-        created_at::date        as sale_date,
-        hour(created_at)        as sale_hour,
-        dayofweek(created_at)   as day_of_week
+        created_at::date        as waste_date,
 
     from source
 
-    -- Double check to ensure no null columns
     where created_at is not null
 
 )

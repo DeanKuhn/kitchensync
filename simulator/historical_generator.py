@@ -44,26 +44,38 @@ RUSH_CURVE = {
 }
 
 BASE_VOLUME = {
-    1: 50,
-    2: 100,
-    3: 200,
+    1: 80,
+    2: 140,
+    3: 220,
     4: 400
 }
 
 RANDOMNESS = {
-    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": [10, 15, 20, 10, 20, 15, 10]},
-    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": [10, 15, 20, 10, 20, 15, 10]},
-    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": [10, 15, 20, 10, 20, 15, 10]},
-    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": [10, 15, 20, 10, 20, 15, 10]}
+    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": [5, 10, 25, 30, 25, 10, 5]},
+    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": [5, 10, 25, 30, 25, 10, 5]},
+    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": [5, 10, 25, 30, 25, 10, 5]},
+    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": [5, 10, 25, 30, 25, 10, 5]}
 }
 
 START_DATE = date(2026, 1, 1)
 
 HOURS_AVAILABLE = {
-    "breakfast": [4, 11],
+    "breakfast": [4, 12],
     "lunch": [10, 22],
     "all_day": [0, 24],
-    "chicken": [9, 22]
+    "chicken": [9, 22],
+    "appetizers": [9, 22],
+    "sides": [9, 22]
+}
+
+WEEKDAY_MULTIPLIER = {
+    "Sunday": 0.7,
+    "Monday": 0.9,
+    "Tuesday": 1.0,
+    "Wednesday": 1.0,
+    "Thursday": 1.2,
+    "Friday": 1.2,
+    "Saturday": 0.8
 }
 
 
@@ -79,18 +91,19 @@ for store in stores["stores"]:
         print(f"Hours unknown for {store_id}, skipping.")
         continue
 
-    # One connectoin checkout for the entire store
+    # One connection checkout for the entire store
     connection = get_store_connection(store_id)
     cursor = connection.cursor()
 
     try:
-        for day in range(90):
+        for day in range(42):
 
             sim_date = START_DATE + timedelta(days=day)
 
             for hour in range(min_max_hours[0], min_max_hours[1]):
 
-                event_count = max(0, round(RUSH_CURVE[hour] *
+                event_count = max(1, round(RUSH_CURVE[hour] *
+                                    WEEKDAY_MULTIPLIER[sim_date.strftime("%A")] *
                                     (BASE_VOLUME[level] +
                                     random.choices(RANDOMNESS[level]["values"],
                                         weights=RANDOMNESS[level]["weights"])[0])))
@@ -113,7 +126,10 @@ for store in stores["stores"]:
 
                 for _ in range(event_count):
 
-                    item = random.choice(available_items)
+                    item = random.choices(
+                        available_items,
+                        weights=[i["popularity"] for i in available_items]
+                    )[0]
 
                     price = random.choices([item["price"], item["sale_price"]],
                                             weights=[0.8, 0.2])[0]
@@ -140,7 +156,7 @@ for store in stores["stores"]:
 
             # Commit once per day, not once per event
             connection.commit()
-            print(f"[{store_id}] Day {day + 1}/90 ({sim_date}) complete")
+            print(f"[{store_id}] Day {day + 1}/42 ({sim_date}) complete")
 
     except Exception as e:
         connection.rollback()

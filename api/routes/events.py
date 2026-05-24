@@ -12,7 +12,7 @@ from api.db.connection import get_store_connection, release_connection
 router = APIRouter()
 
 
-# Updated to release pool connection instad of just connection.close()
+# Updated to release pool connection instead of just connection.close()
 def close_and_commit(connection, cursor):
     connection.commit()
     cursor.close()
@@ -35,9 +35,9 @@ def create_sales_event(store_id: str, event: SalesEvent):
 
     try:
         cursor.execute("""
-            INSERT INTO sales_events (item_id, quantity, price)
-            VALUES (%s, %s, %s);
-        """, (event.item_id, event.quantity, event.price))
+            INSERT INTO sales_events (item_id, quantity, price, created_at)
+            VALUES (%s, %s, %s, %s);
+        """, (event.item_id, event.quantity, event.price, event.created_at))
 
         close_and_commit(connection, cursor)
 
@@ -60,9 +60,9 @@ def create_waste_event(store_id: str, event: WasteEvent):
 
     try:
         cursor.execute("""
-            INSERT into waste_log (item_id, quantity, reason)
-            VALUES (%s, %s, %s);
-        """, (event.item_id, event.quantity, event.reason))
+            INSERT into waste_log (item_id, quantity, reason, created_at)
+            VALUES (%s, %s, %s, %s);
+        """, (event.item_id, event.quantity, event.reason, event.created_at))
 
         close_and_commit(connection, cursor)
         return {"status": "ok", "store_id": store_id}

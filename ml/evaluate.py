@@ -1,13 +1,15 @@
 # MAE, RMSE, urgency precision/recall
 
 
-
+import os
 import joblib
 import pandas as pd
+from dotenv import load_dotenv # type:ignore
 from sklearn.metrics import \
     mean_absolute_error, root_mean_squared_error, classification_report
 
 from ml.features import load_features
+load_dotenv()
 
 
 def load_test_data(se, ie):
@@ -51,7 +53,7 @@ def evaluate_regression(model, X_test, y_test, name):
 def evaluate_urgency(y_test, preds, avg_hourly_quantity, name):
 
     # Create two boolean arrays for urgency calculation
-    threshold = avg_hourly_quantity * 1.4
+    threshold = avg_hourly_quantity * float(os.getenv("URGENCY_THRESHOLD"))
     actual_urgent = y_test > threshold
     predicted_urgent = preds > threshold
 
