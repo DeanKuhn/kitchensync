@@ -1,47 +1,47 @@
-item_id,name,area,category,price,cost,active,added
-CHEESEBURGER,Cheeseburger,hot_spot,all_day,2.99,1.20,true,2024-01-01
-CHICKEN_SANDWICH,Chicken Sandwich,hot_spot,all_day,2.99,1.25,true,2024-01-01
-SAUSAGE_EGG_CROISSANT,Sausage Egg Croissant,hot_spot,breakfast,3.29,1.30,true,2024-01-01
-BACON_EGG_CROISSANT,Bacon Egg Croissant,hot_spot,breakfast,3.29,1.35,true,2024-01-01
-HAM_CROISSANT,Ham Croissant,hot_spot,breakfast,3.29,1.20,true,2024-01-01
-WESTERN_OMELETTE_CROISSANT,Western Omelette Croissant,hot_spot,breakfast,3.29,1.40,true,2024-01-01
-SAUSAGE_BISCUIT,Sausage Biscuit,hot_spot,breakfast,2.49,0.90,true,2024-01-01
-WAFFLE_SAUSAGE_SANDWICH,Waffle Sausage Sandwich,hot_spot,breakfast,2.99,1.10,true,2024-01-01
-HASH_BROWNS,Hash Browns,hot_spot,breakfast,1.99,0.60,true,2024-01-01
-SAUSAGE_EGG_BURRITO,Sausage Egg Burrito,hot_spot,breakfast,2.79,1.10,true,2024-01-01
-CHIMI,Chimi,hot_spot,breakfast,2.79,1.00,true,2026-02-12
-EGG_ROLL,Egg Roll,roller_grill,all_day,2.79,0.80,true,2024-01-01
-SAUSAGE_EGG_TORNADO,Sausage Egg Tornado,roller_grill,breakfast,2.79,0.90,true,2025-07-01
-FRENCH_TOAST_TORNADO,French Toast Tornado,roller_grill,breakfast,2.79,0.85,true,2024-01-01
-BREAK_STICKS,Break Sticks,hot_spot,lunch,2.79,0.90,true,2024-01-01
-PIZZA_SLICE,Pizza Slice,hot_spot,lunch,2.49,0.85,true,2024-01-01
-GRILLED_CHEESE,Grilled Cheese,hot_spot,lunch,2.49,0.70,true,2024-01-01
-BACON_CHEESEBURGER,Bacon Cheeseburger,hot_spot,lunch,3.49,1.50,true,2024-01-01
-MUSHROOM_SWISS_BURGER,Mushroom Swiss Burger,hot_spot,lunch,3.49,1.45,true,2024-01-01
-PRETZEL_BUN_BURGER,Pretzel Bun Burger,hot_spot,lunch,3.49,1.45,true,2024-01-01
-RIB_SANDWICH,Rib Sandwich,hot_spot,lunch,2.99,1.30,true,2024-01-01
-CORN_DOG,Corn Dog,hot_spot,lunch,1.99,0.65,true,2024-01-01
-SAUSAGE_BURRITO,Sausage Burrito,hot_spot,lunch,2.49,0.95,true,2024-01-01
-PEPPERONI_BURRITO,Pepperoni Burrito,hot_spot,lunch,2.49,0.90,true,2024-01-01
-HOT_DOG,Hot Dog,roller_grill,lunch,2.79,0.75,true,2024-01-01
-BRAT,Brat,roller_grill,lunch,2.79,0.95,true,2024-01-01
-CHEDDARWURST,Cheddarwurst,roller_grill,lunch,2.79,0.95,true,2024-01-01
-PEPPERJACK_TORNADO,Pepperjack Tornado,roller_grill,lunch,2.79,0.85,true,2024-01-01
-STEAK_RANCHERO_TORNADO,Steak Ranchero Tornado,roller_grill,lunch,2.79,1.00,true,2024-01-01
-BUFFALO_CHICKEN_ROLLERBITES,Buffalo Chicken Rollerbites,roller_grill,lunch,2.79,0.95,true,2026-02-12
-2PC_WHITE_MEAT,2 Pc White Meat,hot_spot,chicken,3.99,1.80,true,2025-06-01
-2PC_DARK_MEAT,2 Pc Dark Meat,hot_spot,chicken,3.99,1.60,true,2025-06-01
-3PC_TENDERS,3 Pc Tenders,hot_spot,chicken,6.49,2.80,true,2025-06-01
-CHICKEN_QUESADILLA,Chicken Quesadilla,hot_spot,chicken,4.99,2.00,true,2025-06-01
-8PC_BONE_IN,8 Pc Bone-In,hot_spot,chicken,15.00,6.50,true,2025-06-01
-8PC_TENDERS,8 Pc Tenders,hot_spot,chicken,12.99,5.50,true,2025-06-01
-WHOLE_BIRD,Whole Bird,hot_spot,chicken,9.00,4.00,true,2025-06-01
-BONELESS_WINGS,Boneless Wings,hot_spot,appetizers,6.99,2.80,true,2025-06-01
-MOZZARELLA_STICKS,Mozzarella Sticks,hot_spot,appetizers,3.99,1.30,true,2025-06-01
-MINI_TACOS,Mini Tacos,hot_spot,appetizers,3.49,1.10,true,2025-06-01
-CHEESE_CURDS,Cheese Curds,hot_spot,appetizers,3.49,1.20,true,2025-06-01
-JALAPENO_BITES,Jalapeno Bites,hot_spot,appetizers,3.49,1.10,true,2026-02-12
-FRIED_PICKLES,Fried Pickles,hot_spot,appetizers,3.49,0.90,true,2025-06-01
-MAC_AND_CHEESE,Mac and Cheese,hot_spot,sides,2.99,0.90,true,2025-06-01
-MASHED_POTATOES_GRAVY,Mashed Potatoes & Gravy,hot_spot,sides,2.99,0.85,true,2025-06-01
-CHICKEN_POT_PIE,Chicken Pot Pie,hot_spot,chicken,5.99,2.50,false,2025-06-01
+item_id,name,price,sale_price,sale_days,cost,time_of_day,category,hold_time,popularity,active,added
+CHEESEBURGER,Cheeseburger,2.99,1.99,"[2, 5]",1.20,all_day,sandwich,2,5,True,2024-01-01
+CHICKEN_SANDWICH,Chicken Sandwich,2.99,1.99,"[1, 4]",1.25,all_day,sandwich,2,4,True,2024-01-01
+GRILLED_CHEESE,Grilled Cheese,2.49,1.49,[0],0.70,all_day,sandwich,2,3,True,2024-01-01
+RIB_SANDWICH,Rib Sandwich,2.99,1.99,[3],1.30,all_day,sandwich,2,3,True,2024-01-01
+SAUSAGE_BURRITO,Sausage Burrito,2.49,1.49,"[1, 3]",0.95,all_day,sandwich,3,3,True,2024-01-01
+PEPPERONI_BURRITO,Pepperoni Burrito,2.49,1.49,"[2, 4]",0.90,all_day,sandwich,3,3,True,2024-01-01
+PIZZA_SLICE,Pizza Slice,2.49,1.89,"[4, 5]",0.85,all_day,side,1.5,5,True,2024-01-01
+BREAK_STICKS,Break Sticks,2.79,1.39,"[0, 2]",0.90,all_day,side,2,3,True,2024-01-01
+CORN_DOG,Corn Dog,1.99,0.99,"[1, 6]",0.65,all_day,side,2,4,True,2024-01-01
+EGG_ROLL,Egg Roll,2.79,1.69,[2],0.80,all_day,roller_grill,4,3,True,2024-01-01
+HOT_DOG,Hot Dog,2.79,1.69,"[3, 6]",0.75,all_day,roller_grill,4,5,True,2024-01-01
+BRAT,Brat,2.79,1.69,"[4, 5]",0.95,all_day,roller_grill,4,4,True,2024-01-01
+CHEDDARWURST,Cheddarwurst,2.79,1.69,[1],0.95,all_day,roller_grill,4,3,True,2024-01-01
+PEPPERJACK_TORNADO,Pepperjack Tornado,2.79,1.69,"[0, 3]",0.85,all_day,roller_grill,4,3,True,2024-01-01
+STEAK_RANCHERO_TORNADO,Steak Ranchero Tornado,2.79,1.69,"[1, 4]",1.00,all_day,roller_grill,4,3,True,2024-01-01
+BUFFALO_CHICKEN_ROLLERBITES,Buffalo Chicken Rollerbites,2.79,1.69,"[2, 5]",0.95,all_day,roller_grill,4,3,True,2026-02-12
+SAUSAGE_EGG_CROISSANT,Sausage Egg Croissant,3.29,,,1.30,breakfast,sandwich,2.5,5,True,2024-01-01
+BACON_EGG_CROISSANT,Bacon Egg Croissant,3.29,,,1.35,breakfast,sandwich,2.5,4,True,2024-01-01
+HAM_CROISSANT,Ham Croissant,3.29,,,1.20,breakfast,sandwich,2.5,3,True,2024-01-01
+WESTERN_OMELETTE_CROISSANT,Western Omelette Croissant,3.29,,,1.40,breakfast,sandwich,2.5,2,True,2024-01-01
+SAUSAGE_BISCUIT,Sausage Biscuit,2.49,1.49,"[0, 1]",0.90,breakfast,sandwich,2,3,True,2024-01-01
+WAFFLE_SAUSAGE_SANDWICH,Waffle Sausage Sandwich,2.99,1.99,"[2, 3]",1.10,breakfast,sandwich,2,3,True,2024-01-01
+SAUSAGE_EGG_BURRITO,Sausage Egg Burrito,2.79,1.79,[4],1.10,breakfast,sandwich,3,3,True,2024-01-01
+CHIMI,Chimi,2.79,1.79,"[5, 6]",1.00,breakfast,sandwich,3,3,True,2026-02-12
+HASH_BROWNS,Hash Browns,1.99,0.99,"[0, 4]",0.60,breakfast,side,2.5,4,True,2024-01-01
+SAUSAGE_EGG_TORNADO,Sausage Egg Tornado,2.79,1.69,"[1, 3]",0.90,breakfast,roller_grill,4,4,True,2025-07-01
+FRENCH_TOAST_TORNADO,French Toast Tornado,2.79,1.69,"[0, 2]",0.85,breakfast,roller_grill,4,3,True,2024-01-01
+BACON_CHEESEBURGER,Bacon Cheeseburger,3.49,2.49,[4],1.50,lunch,sandwich,2,4,True,2024-01-01
+MUSHROOM_SWISS_BURGER,Mushroom Swiss Burger,3.49,2.49,[1],1.45,lunch,sandwich,2,3,True,2024-01-01
+PRETZEL_BUN_BURGER,Pretzel Bun Burger,3.49,2.49,[3],1.45,lunch,sandwich,2,3,True,2024-01-01
+2PC_WHITE_MEAT,2 Pc White Meat,3.99,2.99,"[0, 3]",1.80,chicken,chicken,3,4,True,2025-06-01
+2PC_DARK_MEAT,2 Pc Dark Meat,3.99,2.99,"[1, 4]",1.60,chicken,chicken,3,3,True,2025-06-01
+3PC_TENDERS,3 Pc Tenders,6.49,4.99,"[2, 5]",2.80,chicken,chicken,2,4,True,2025-06-01
+CHICKEN_QUESADILLA,Chicken Quesadilla,4.99,3.99,[3],2.00,chicken,chicken,2,3,True,2025-06-01
+8PC_BONE_IN,8 Pc Bone-In,15.00,10.00,[6],6.50,chicken,chicken,3,2,True,2025-06-01
+8PC_TENDERS,8 Pc Tenders,12.99,9.99,"[5, 6]",5.50,chicken,chicken,2,2,True,2025-06-01
+WHOLE_BIRD,Whole Bird,9.00,7.00,[0],4.00,chicken,chicken,4,1,True,2025-06-01
+CHICKEN_POT_PIE,Chicken Pot Pie,5.99,,,2.50,chicken,chicken,4,1,False,2025-06-01
+BONELESS_WINGS,Boneless Wings,6.99,4.99,"[4, 5]",2.80,chicken,appetizer,1.5,3,True,2025-06-01
+MOZZARELLA_STICKS,Mozzarella Sticks,3.99,2.99,"[1, 3]",1.30,chicken,appetizer,1.5,4,True,2025-06-01
+MINI_TACOS,Mini Tacos,3.49,2.49,[2],1.10,chicken,appetizer,1.5,4,True,2025-06-01
+CHEESE_CURDS,Cheese Curds,3.49,2.49,"[4, 6]",1.20,chicken,appetizer,1.5,4,True,2025-06-01
+JALAPENO_BITES,Jalapeno Bites,3.49,2.49,"[0, 3]",1.10,chicken,appetizer,1.5,3,True,2026-02-12
+FRIED_PICKLES,Fried Pickles,3.49,2.49,"[1, 2]",0.90,chicken,appetizer,1.5,3,True,2025-06-01
+MAC_AND_CHEESE,Mac and Cheese,2.99,1.99,"[1, 3]",0.90,chicken,side,4,3,True,2025-06-01
+MASHED_POTATOES_GRAVY,Mashed Potatoes & Gravy,2.99,1.99,"[0, 2]",0.85,chicken,side,4,2,True,2025-06-01

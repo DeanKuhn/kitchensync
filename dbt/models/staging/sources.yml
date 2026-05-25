@@ -4,12 +4,79 @@ sources:
   - name: raw
     database: KS_DB
     schema: raw
+    freshness:
+      warn_after: {count: 30, period: minute}
+    loaded_at_field: created_at
+
     tables:
       - name: sales_events
+        description: "Raw POS sales transactions from all stores"
+        columns:
+          - name: store_id
+            description: "Unique identifier for the retail location (e.g., store_012)"
+            tests:
+              - not_null
+          - name: item_id
+            description: "Identifier for the menu item (e.g., CHEESEBURGER)"
+            tests:
+              - not_null
+          - name: quantity
+            description: "Number of units sold in the transaction"
+            tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  min_value: 1
+          - name: price
+            description: "The unit price at the time of sale"
+          - name: created_at
+            description: "The UTC timestamp when the sale was recorded in the POS"
+            tests:
+              - not_null
+
       - name: waste_log
+        description: "Logs of expired food items removed from inventory."
+        columns:
+          - name: store_id
+            description: "Identifier for the retail location"
+            tests:
+              - not_null
+          - name: item_id
+            description: "Identifier for the wasted menu item"
+            tests:
+              - not_null
+          - name: quantity
+            description: "Number of units discarded"
+            tests:
+              - not_null
+          - name: created_at
+            description: "The UTC timestamp when the waste was recorded"
+            tests:
+              - not_null
+
+      - name: stockout_events
+        description: "Logs of customer demand that could not be met due to zero inventory."
+        columns:
+          - name: store_id
+            description: "Identifier for the retail location"
+            tests:
+              - not_null
+          - name: item_id
+            description: "Identifier for the stockout menu item"
+            tests:
+              - not_null
+          - name: quantity_requested
+            description: "Number of units requested (by simulated API)"
+            tests:
+              - not_null
+          - name: created_at
+            description: "The UTC timestamp when the stockout was recorded"
+            tests:
+              - not_null
+
 
   - name: marts
     database: KS_DB
     schema: marts
     tables:
       - name: predictions
+        description: "The output of the LightGBM model, ingested back into Snowflake."

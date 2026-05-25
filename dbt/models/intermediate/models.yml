@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: int_sales__rolling_features
+    description: "Aggregates sales to an hourly grain and computes rolling windows (2hr, 4hr). These features capture short-term momentum."
+    columns:
+      - name: hourly_quantity
+        description: "Total units sold for a specific store/item/hour."
+      - name: rolling_2hr
+        description: "Rolling sum of current hour and 1 preceding hour. Represents immediate trend."
+      - name: rolling_4hr
+        description: "Rolling sum of current hour and 3 preceding hours. Represents sustained trend."
+
+  - name: int_sales__time_of_day_profile
+    description: "Calculates the historical average demand per store, item, day of week, and hour. Serves as the 'Expected Baseline' for the system."
+    columns:
+      - name: avg_hourly_quantity
+        description: "The arithmetic mean of units sold across all observed weeks for this specific time slot."
+      - name: sample_size
+        description: "The number of unique weeks contributing to the average. Higher values indicate higher baseline reliability."

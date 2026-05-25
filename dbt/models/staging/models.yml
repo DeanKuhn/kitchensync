@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: stg_sales_events
+    description: "Cleaned and typed sales events. Derives hourly and day-of-week features used for time-series forecasting."
+    columns:
+      - name: sale_date
+        description: "The date part of created_at, used for daily partitioning."
+      - name: sale_hour
+        description: "The hour (0-23) derived from created_at, critical for modeling rush patterns."
+      - name: day_of_week
+        description: "Numeric day of week (0=Sunday in Snowflake default) for capturing weekly seasonality."
+
+  - name: stg_waste_log
+    description: "Cleaned and typed waste events, standardized to match the sales schema."

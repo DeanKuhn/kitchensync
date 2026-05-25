@@ -40,12 +40,12 @@ for store in config["stores"]:
             created_at TIMESTAMP DEFAULT now());
             """)
 
-        # Create inventory_snapshots table for each store
+        # Create stockout_events table for each store
         cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS {store_id}.inventory_snapshots(
+            CREATE TABLE IF NOT EXISTS {store_id}.stockout_events(
             id SERIAL PRIMARY KEY,
             item_id TEXT,
-            quantity INT,
+            quantity_requested INT,
             created_at TIMESTAMP DEFAULT now());
             """)
 

@@ -5,21 +5,11 @@ with rolling as (
 ),
 
 
--- store_id | item_id | ... | hourly_quantity | rolling_2hr | rolling_4hr
--- ---------+---------+-----+-----------------+-------------+------------
--- store_01 | HOT_DOG | ... | 12              | 18          | 40
-
-
 profile as (
 
     select * from {{ ref('int_sales__time_of_day_profile') }}
 
 ),
-
-
--- store_id | item_id | day_of_week | sale_hour | avg_hourly_quantity | sample_size
--- ---------+---------+-------------+-----------+---------------------+------------
--- store_01 | HOT_DOG | 3           | 12        | 10                  | 40
 
 
 final as (
@@ -49,6 +39,20 @@ final as (
 select * from final
 
 
--- ... | hourly_quantity | rolling_2hr | rolling_4hr | avg_hourly_quantity | sample_size
--- ----+-----------------+-------------+-------------+---------------------+------------
---     | 12              | 18          | 40          | 10                  | 40
+/*
+
+--- DATA TRANSFORMATION VISUALIZATION ---
+
+STEP 1: rolling (The "Now" data - current performance)
+STORE_ID | ITEM_ID | SALE_HOUR | ROLLING_2HR | ROLLING_4HR
+store_01 | BURGER  | 12        | 15          | 25
+
+STEP 2: profile (The "Historical" data - what usually happens)
+STORE_ID | ITEM_ID | SALE_HOUR | AVG_HOURLY_QUANTITY | SAMPLE_SIZE
+store_01 | BURGER  | 12        | 10                  | 40
+
+STEP 3: final (The Feature Store for ML)
+ITEM_ID | ROLLING_2HR | AVG_HOURLY_QUANTITY | COMPARISON
+BURGER  | 15          | 10                  | Current is 1.5x history
+
+*/

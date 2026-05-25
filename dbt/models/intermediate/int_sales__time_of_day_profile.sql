@@ -1,20 +1,20 @@
 with sales as (
 
-    -- ref() is how other dbt models are referenced
     select * from {{ ref('stg_sales_events') }}
 
 ),
 
 
-hourly as (
+fifteen_min as (
 
     select
         store_id,
         item_id,
         sale_date,
         sale_hour,
+        sale_minute,
         day_of_week,
-        sum(quantity) as hourly_quantity
+        sum(quantity) as quantity
 
     from sales
 
@@ -23,14 +23,10 @@ hourly as (
         item_id,
         sale_date,
         sale_hour,
+        sale_minute,
         day_of_week
 
 ),
-
-
--- store_id | item_id | ... | hourly_quantity
--- ---------+---------+-----+----------------
--- store_01 | HOT_DOG | ... | 12
 
 
 profile as (
@@ -40,19 +36,18 @@ profile as (
         item_id,
         day_of_week,
         sale_hour,
-        avg(hourly_quantity) as avg_hourly_quantity,
-
-        -- sample_size is the count of how many data points went
-        -- into each average
+        sale_minute,
+        avg(quantity) as avg_hourly_quantity,
         count(*) as sample_size
 
-    from hourly
+    from fifteen_min
 
     group by
         store_id,
         item_id,
         day_of_week,
-        sale_hour
+        sale_hour,
+        sale_minute
 
 )
 
@@ -60,6 +55,16 @@ profile as (
 select * from profile
 
 
--- store_id | item_id | day_of_week | sale_hour | avg_quantity | sample_size
--- ---------+---------+-------------+-----------+--------------+------------
--- store_01 | HOT_DOG | 3           | 12        | 5            | 40
+/*
+
+--- DATA TRANSFORMATION VISUALIZATION ---
+
+STEP 1: fifteen_min (Aggregated by 15-minute blocks)
+STORE_ID | ITEM_ID | SALE_HOUR | SALE_MINUTE | QUANTITY
+store_01 | BURGER  | 12        | 0           | 3
+store_01 | BURGER  | 12        | 15          | 2
+
+STEP 2: profile (Historical averages per 15-min block)
+STORE_ID | ITEM_ID | DAY_OF_WEEK | HOUR | MINUTE | AVG_HOURLY_QUANTITY
+store_01 | BURGER  | 1 (Mon)     | 12   | 0      | 2.8
+*/

@@ -1,62 +1,58 @@
 # KitchenSync Food Forecasting System
 
-A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS). The system uses a real-time data pipeline, a multi-store Postgres architecture, a dbt-powered Snowflake analytics warehouse, and a LightGBM forecasting model to produce per-store food production plans — refreshed every 5 minutes.
+A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS). The system uses a real-time data pipeline, a multi-store Postgres architecture, a dbt-powered Snowflake analytics warehouse, and a LightGBM forecasting model to produce per-store food production plans — refreshed every 60 seconds.
 
 ---
 
 ## What This Project Demonstrates
 
-- **Robust data pipeline engineering** — real-time POS event ingestion via FastAPI, per-store schema isolation in Neon (Postgres), and a sync pipeline into Snowflake
-- **Modern analytics stack** — dbt Core transformations across staging → intermediate → mart → metrics layers with clean schema separation
+- **Robust data pipeline engineering** — async POS event ingestion via FastAPI, per-store schema isolation in Neon (Postgres), and a sync pipeline into Snowflake
+- **Modern analytics stack** — dbt Core transformations across staging → intermediate → mart layers with clean schema separation and column-level documentation
 - **ML model development** — baseline scikit-learn model vs. production LightGBM, feature engineering from time-series sales data, cold-start handling for new menu items
 - **Scalable architecture** — 12 simulated stores across 4 Midwest regions, each treated as an independent forecasting unit; config-file-driven menu allows items to be toggled without code changes
-- **End-to-end thinking** — from raw POS event to kitchen staff production plan displayed in a live Streamlit dashboard
+- **End-to-end thinking** — from raw POS event to kitchen staff production plan displayed in a live Streamlit dashboard with missed demand tracking
 
 ---
 
 ## System Architecture
 
 ```
-[POS Simulator] ──POST /sale──> [FastAPI Ingest API]
-                                        │
-                                        ▼
-                               [Neon (Postgres)]
-                               Per-store schemas
-                               (transactional layer)
-                                        │
-                               [extract_to_snowflake.py]
-                                        │
-                                        ▼
-                          [Snowflake — KS_DB.RAW]
-                                        │
-                               [dbt Core pipeline]
-                                        │
-                          ┌─────────────┴─────────────┐
-                          ▼                           ▼
-                    KS_DB.STAGING            KS_DB.INTERMEDIATE
-                  stg_sales_events      int_sales__rolling_features
-                                      int_sales__time_of_day_profile
-                                                    │
-                                                    ▼
-                                            KS_DB.MARTS
-                                          mart_store_sales
-                                         mart_item_velocity
-                                                    │
-                                                    ▼
-                                           KS_DB.METRICS
-                                      metrics_forecast_accuracy
-                                        metrics_stockout_rate
-                                                    │
-                                          [Feature Engineering]
-                                                    │
-                                                    ▼
-                                [LightGBM Forecasting Model]
-                            (baseline: scikit-learn RandomForest)
-                                                    │
-                                                    ▼
-                                      [Streamlit Dashboard]
-                                Per-store production plan (5-min refresh)
-                                    Items labeled NORMAL or URGENT
+[POS Simulator] ──POST /sales, /waste, /stockout──> [FastAPI Ingest API]
+                                                              │
+                                                              ▼
+                                                     [Neon (Postgres)]
+                                                     Per-store schemas
+                                                              │
+                                                    [extract_to_snowflake.py]
+                                                              │
+                                                              ▼
+                                               [Snowflake — KS_DB.RAW]
+                                         RAW.SALES_EVENTS + RAW.WASTE_LOG
+                                                              │
+                                                     [dbt Core pipeline]
+                                                              │
+                                          ┌───────────────────┴───────────────────┐
+                                          ▼                                       ▼
+                                    KS_DB.STAGING                      KS_DB.INTERMEDIATE
+                                  stg_sales_events                int_sales__rolling_features
+                                   stg_waste_log               int_sales__time_of_day_profile
+                                                                                  │
+                                                                                  ▼
+                                                                          KS_DB.MARTS
+                                                                        mart_store_sales
+                                                                       mart_item_velocity
+                                                                   mart_cold_start_profile
+                                                                   mart_production_targets
+                                                                    mart_waste_percentage
+                                                                    mart_stockout_summary
+                                                                                  │
+                                                                       [ML Pipeline]
+                                                                      ml/train.py (LightGBM)
+                                                                      ml/predict.py → MARTS.PREDICTIONS
+                                                                                  │
+                                                                      [Streamlit Dashboard]
+                                                              Per-store production queue (60s refresh)
+                                                          NORMAL / URGENT flags + Missed Demand tracking
 ```
 
 ---
@@ -67,13 +63,13 @@ A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS)
 |---|---|
 | Language | Python 3.12+ |
 | Ingest API | FastAPI |
-| POS Simulation | Python (randomized, time-aware traffic patterns) |
-| Transactional DB | Neon (cloud Postgres) |
+| POS Simulation | Python (async/httpx, Poisson arrivals, FIFO batch management) |
+| Transactional DB | Neon (cloud Postgres) — per-store schemas |
 | Analytics Warehouse | Snowflake |
 | Transformations | dbt Core |
 | ML — Baseline | scikit-learn (RandomForest) |
 | ML — Production | LightGBM |
-| Dashboard | Streamlit |
+| Dashboard | Streamlit + streamlit-autorefresh |
 | Config | YAML (menu items, store definitions) |
 | Package Management | uv |
 
@@ -82,32 +78,29 @@ A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS)
 ## How It Works
 
 ### 1. POS Simulation
-A Python simulator fires fake point-of-sale events directly to Neon via psycopg2 batch inserts, mimicking realistic store traffic — busy at lunch, slow overnight. Each event carries a store ID, item ID, quantity, price, and timestamp. ~2.7 million historical events across 12 stores were generated covering 90 days.
+An async Python simulator (httpx + asyncio) fires fake point-of-sale events to the ingest API, mimicking realistic store traffic using a Poisson distribution for customer arrivals and a time-of-day rush curve. Each store runs as an independent async task. A `StoreState` class tracks FIFO batch inventory — food is produced based on ML predictions, consumed when sold, and logged as waste when it expires past its hold time. Stockout events are fired when a customer requests an item with no inventory.
 
 ### 2. Ingest API
-A FastAPI application receives live sale events and writes them to the appropriate store schema in Neon (Postgres). Each of the 12 stores has its own schema (`store_012`, `store_027`, etc.), demonstrating horizontal schema isolation. Three endpoints handle sales, waste, and inventory events.
+A FastAPI application receives live events and writes them to the appropriate store schema in Neon (Postgres). Each of the 12 stores has its own schema (`store_012`, `store_027`, etc.), demonstrating horizontal schema isolation. Three endpoints handle sales, waste, and stockout events.
 
 ### 3. Snowflake Extract
-A Python script (`scripts/extract_to_snowflake.py`) pulls all sales events from each store schema in Neon and loads them into a single `KS_DB.RAW.SALES_EVENTS` table in Snowflake with `store_id` added. Full reload on each run.
+A Python script (`scripts/extract_to_snowflake.py`) pulls all sales and waste events from Neon and loads them into `KS_DB.RAW` in Snowflake. Full reload on each run.
 
 ### 4. dbt Pipeline
-dbt Core transforms raw sales events through four layers in Snowflake:
-- **Staging** — cleans and types raw events, derives `sale_date`, `sale_hour`, `day_of_week`
-- **Intermediate** — computes rolling 1hr and 4hr sales aggregates; builds historical time-of-day demand profiles
-- **Marts** — wide fact tables combining store, item, time features, and rolling aggregates
-- **Metrics** — forecast accuracy (MAE, RMSE) and stockout rate tracking
+dbt Core transforms raw events through three layers in Snowflake:
+- **Staging** — cleans and types raw events; derives `sale_date`, `sale_hour`, `day_of_week`
+- **Intermediate** — computes rolling 2hr and 4hr sales aggregates; builds historical time-of-day demand profiles per store + item + hour + day-of-week
+- **Marts** — business logic layer: production targets, item velocity and urgency flags, waste percentage, cold-start profiles, stockout summaries
 
 ### 5. ML Forecasting Model
-A LightGBM model trained on 90 days of synthetic historical data predicts **units to produce in the next 1 hour** per item per store. Features include time-of-day, day-of-week, rolling sales windows, and historical demand profiles.
+A LightGBM model predicts units to produce per item per store. Features include time-of-day, day-of-week, rolling sales windows, and historical demand profiles. Items are flagged:
+- `NORMAL` — demand is within historical norms
+- `URGENT` — current sell-through rate exceeds historical average by 2x (configurable)
 
-Items are flagged:
-- `NORMAL` — predicted demand is in line with historical patterns
-- `URGENT` — current sell-through rate exceeds historical average by 1.4x or more (configurable)
-
-New menu items with no history fall back to category-level averages until 7 days of data accumulates.
+Items with fewer than 4 data points fall back to category-level averages from `mart_cold_start_profile`.
 
 ### 6. Streamlit Dashboard
-A simple dashboard refreshes every 5 minutes showing the current production plan per store. Kitchen staff see a table of items with predicted units and urgency status.
+An interactive dashboard refreshes every 60 seconds. Kitchen staff see a production queue with urgency flags, a "Mark Complete" checkbox per item (persisted in session state), and a missed demand column showing units lost to stockouts. A waste summary below shows Hot Foods, Roller Grill, and Chicken waste percentages for the most recent day.
 
 ---
 
@@ -116,25 +109,31 @@ A simple dashboard refreshes every 5 minutes showing the current production plan
 ```
 kitchensync/
 ├── config/                    # menu.yaml, stores.yaml
-├── data/                      # Seed CSVs, parquet exports
-├── simulator/                 # POS event simulator, historical data generator
-├── api/                       # FastAPI ingest service
-├── dbt/                       # dbt project (staging → intermediate → marts → metrics)
-│   ├── macros/
-│   │   └── generate_schema_name.sql   # Overrides dbt default schema prefixing
+├── data/seeds/                # menu_items.csv (dbt seed)
+├── simulator/
+│   ├── pos_simulator.py       # Live async simulator (httpx + asyncio)
+│   └── historical_generator.py # Batch historical data generator
+├── api/
+│   ├── main.py
+│   ├── routes/events.py       # POST /sales, /waste, /stockout
+│   ├── models/schemas.py      # Pydantic: SalesEvent, WasteEvent, StockoutEvent
+│   └── db/connection.py       # Neon connection pool, per-store search_path
+├── dbt/
+│   ├── macros/generate_schema_name.sql
 │   └── models/
-│       ├── staging/
-│       │   ├── sources.yml
-│       │   └── stg_sales_events.sql
-│       ├── intermediate/
-│       │   ├── int_sales__rolling_features.sql
-│       │   └── int_sales__time_of_day_profile.sql
-│       ├── marts/
-│       └── metrics/
-├── ml/                        # Feature engineering, training, inference, evaluation
-├── dashboard/                 # Streamlit app
-├── scripts/                   # init_db.py, extract_to_snowflake.py
-└── tests/                     # Unit tests for API, simulator, ML features
+│       ├── staging/           # stg_sales_events, stg_waste_log
+│       ├── intermediate/      # int_sales__rolling_features, int_sales__time_of_day_profile
+│       └── marts/             # mart_store_sales, mart_item_velocity, mart_cold_start_profile,
+│                              # mart_production_targets, mart_waste_percentage, mart_stockout_summary
+├── ml/                        # features.py, train.py, predict.py, evaluate.py
+├── dashboard/
+│   ├── app.py
+│   ├── components/            # production_plan.py, waste_summary.py, store_selector.py
+│   └── utils/data_fetch.py
+└── scripts/
+    ├── init_db.py             # One-time Neon schema + table creation
+    ├── extract_to_snowflake.py
+    └── run_pipeline.py        # Extract → dbt → train → predict
 ```
 
 ---
@@ -146,7 +145,6 @@ kitchensync/
 - uv (`pip install uv`)
 - Neon account (free tier sufficient)
 - Snowflake account (free trial sufficient)
-- dbt Core installed (`uv add dbt-snowflake`)
 
 ### Environment Variables
 
@@ -156,7 +154,6 @@ Copy `.env.example` to `.env` and fill in:
 cp .env.example .env
 ```
 
-Required variables:
 ```
 NEON_DATABASE_URL=postgresql://...
 SNOWFLAKE_ACCOUNT=
@@ -165,6 +162,7 @@ SNOWFLAKE_PASSWORD=
 SNOWFLAKE_DATABASE=KS_DB
 SNOWFLAKE_WAREHOUSE=KS_WH
 SNOWFLAKE_ROLE=
+URGENCY_THRESHOLD=2.0
 ```
 
 ### Install Dependencies
@@ -179,112 +177,57 @@ uv sync
 # 1. Initialize Neon schemas (one time)
 PYTHONPATH=. uv run python scripts/init_db.py
 
-# 2. Generate historical data
+# 2. Generate historical data (42 days)
 PYTHONPATH=. uv run python simulator/historical_generator.py
 
-# 3. Extract to Snowflake
-PYTHONPATH=. uv run python scripts/extract_to_snowflake.py
+# 3. Run the full pipeline (extract → dbt → train → predict)
+PYTHONPATH=. uv run python -m scripts.run_pipeline
 
-# 4. Run dbt transformations
-cd dbt && uv run dbt run
-
-# 5. Start the ingest API
+# 4. Start the ingest API
 PYTHONPATH=. uv run uvicorn api.main:app --reload --port 8000
 
-# 6. Start the POS simulator (separate terminal)
+# 5. Start the live POS simulator (separate terminal)
 PYTHONPATH=. uv run python simulator/pos_simulator.py
 
-# 7. Train the forecasting model
-PYTHONPATH=. uv run python ml/train.py
-
-# 8. Launch the dashboard
-uv run streamlit run dashboard/app.py
-```
-
----
-
-## dbt Notes
-
-### Schema Configuration
-dbt models are organized into four Snowflake schemas. A custom `generate_schema_name` macro in `dbt/macros/` overrides dbt's default behavior of prefixing schema names with the target schema, ensuring clean schema names (`STAGING`, `INTERMEDIATE`, `MARTS`, `METRICS`) instead of prefixed ones (`PUBLIC_STAGING`, etc.).
-
-### Running Individual Models
-```bash
-cd dbt
-
-# Run a single model
-uv run dbt run --select stg_sales_events
-
-# Run multiple models
-uv run dbt run --select stg_sales_events int_sales__rolling_features
-
-# Run all models
-uv run dbt run
+# 6. Launch the dashboard
+PYTHONPATH=. uv run streamlit run dashboard/app.py
 ```
 
 ---
 
 ## Menu Configuration
 
-Items are defined in `config/menu.yaml`. To add a new item:
+Items are defined in `config/menu.yaml`. Key fields:
 
 ```yaml
-- id: "PRETZEL_CHEDDAR"
-  name: "Cheddar Pretzel"
-  area: "hot_spot"
-  category: "lunch"
+- id: "CHEESEBURGER"
+  name: "Cheeseburger"
+  price: 2.99
+  sale_price: 1.99
+  sale_days: [2]      # Wednesday (0=Monday, 6=Sunday)
+  cost: 1.20
+  time_of_day: "all_day"   # all_day | breakfast | lunch | chicken
+  category: "sandwich"     # sandwich | side | roller_grill | chicken | appetizer
+  hold_time: 2
+  popularity: 5
   active: true
-  added: 2025-01-01
+  added: 2024-01-01
 ```
 
-To retire an item, set `active: false`. Inactive items are excluded from forecasting automatically. New items with no history fall back to category-level averages until 7 days of data accumulates.
+- Set `active: false` to retire an item — excluded from forecasting automatically
+- Omit `sale_price` and `sale_days` for items that never go on sale
+- `time_of_day` drives availability windows; `category` drives waste grouping and cold-start profiles
 
 ---
 
-## Build Status
+## dbt Commands
 
-### Phase 1 — Foundation ✅
-- [x] Repo scaffolded
-- [x] Config files (menu, stores)
-- [x] Neon provisioned, per-store schemas created
-- [x] FastAPI ingest API (sales, waste, inventory endpoints)
-- [x] Historical data generator (~2.7M events, 12 stores, 90 days)
-- [x] POS simulator
+```bash
+cd dbt
 
-### Phase 2 — Data Pipeline 🔄
-- [x] Snowflake provisioned (KS_DB, KS_WH)
-- [x] Extract script (Neon → Snowflake RAW)
-- [x] dbt project initialized and connected
-- [x] Staging model (`stg_sales_events`)
-- [x] Intermediate models (`int_sales__rolling_features`, `int_sales__time_of_day_profile`)
-- [x] Mart models
-- [ ] Metrics models
-
-### Phase 3 — ML Model
-- [ ] Feature engineering
-- [ ] Baseline model (scikit-learn)
-- [ ] Production model (LightGBM)
-- [ ] Cold-start logic
-- [ ] Urgency flag logic
-- [ ] 5-minute inference loop
-
-### Phase 4 — Dashboard
-- [ ] Streamlit skeleton
-- [ ] Store selector
-- [ ] Production plan table (NORMAL / URGENT)
-- [ ] Auto-refresh
-
-### Phase 5 — Polish
-- [ ] README finalized
-- [ ] dbt metrics layer complete
-- [ ] Dockerfile (reference)
-
----
-
-## Stretch Goals
-
-| Goal | Notes |
-|---|---|
-| Weather feature | Open-Meteo API (free) — temperature and precipitation as model inputs |
-| Auto-retraining pipeline | Weekly cron re-trains on last 90 days; replaces model if RMSE improves |
-| Docker reference | `Dockerfile` present for containerization reference; not used in dev |
+uv run dbt run                          # all models
+uv run dbt run --select <model_name>    # single model
+uv run dbt compile --select <model>     # syntax check only
+uv run dbt seed                         # upload menu_items.csv to Snowflake
+uv run dbt test                         # run data quality tests
+```

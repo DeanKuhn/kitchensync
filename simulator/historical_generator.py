@@ -1,13 +1,9 @@
-# Generates fake historical data (different on store level)
-
-
-import yaml # type:ignore
+import yaml  # type:ignore
 import random
 from datetime import date, timedelta, datetime
 from psycopg2.extras import execute_values
 
 from api.db.connection import get_store_connection, release_connection
-
 
 with open("config/stores.yaml", "r") as f:
     stores = yaml.safe_load(f)
@@ -16,45 +12,27 @@ with open("config/menu.yaml", "r") as f:
     menu = yaml.safe_load(f)
 
 
+# Guarantee that dates for menu items are parsed correctly
+for item in menu["items"]:
+    if isinstance(item["added"], str):
+        item["added"] = datetime.strptime(item["added"], "%Y-%m-%d").date()
+
+
 RUSH_CURVE = {
-    0: 0.1,
-    1: 0.05,
-    2: 0.05,
-    3: 0.05,
-    4: 0.1,
-    5: 0.2,
-    6: 0.6,
-    7: 0.9,
-    8: 0.9,
-    9: 0.7,
-    10: 0.6,
-    11: 0.8,
-    12: 1,
-    13: 0.8,
-    14: 0.6,
-    15: 0.5,
-    16: 0.8,
-    17: 0.9,
-    18: 0.7,
-    19: 0.5,
-    20: 0.3,
-    21: 0.2,
-    22: 0.1,
-    23: 0.1
+    0: 0.1,  1: 0.05, 2: 0.05, 3: 0.05, 4: 0.1,  5: 0.2,
+    6: 0.6,  7: 0.9,  8: 0.9,  9: 0.7,  10: 0.6, 11: 0.8,
+    12: 1,   13: 0.8, 14: 0.6, 15: 0.5, 16: 0.8, 17: 0.9,
+    18: 0.7, 19: 0.5, 20: 0.3, 21: 0.2, 22: 0.1, 23: 0.1
 }
 
-BASE_VOLUME = {
-    1: 80,
-    2: 140,
-    3: 220,
-    4: 400
-}
+BASE_VOLUME = {1: 80, 2: 140, 3: 220, 4: 400}
+weights = [5, 10, 25, 30, 25, 10, 5]
 
 RANDOMNESS = {
-    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": [5, 10, 25, 30, 25, 10, 5]},
-    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": [5, 10, 25, 30, 25, 10, 5]},
-    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": [5, 10, 25, 30, 25, 10, 5]},
-    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": [5, 10, 25, 30, 25, 10, 5]}
+    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": weights},
+    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": weights},
+    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": weights},
+    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": weights}
 }
 
 START_DATE = date(2026, 1, 1)
@@ -64,19 +42,20 @@ HOURS_AVAILABLE = {
     "lunch": [10, 22],
     "all_day": [0, 24],
     "chicken": [9, 22],
-    "appetizers": [9, 22],
-    "sides": [9, 22]
 }
 
 WEEKDAY_MULTIPLIER = {
-    "Sunday": 0.7,
-    "Monday": 0.9,
-    "Tuesday": 1.0,
-    "Wednesday": 1.0,
-    "Thursday": 1.2,
-    "Friday": 1.2,
-    "Saturday": 0.8
+    0: 0.9, 1: 1.0, 2: 1.0, 3: 1.2, 4: 1.2, 5: 0.8, 6: 0.7
 }
+
+# Pre-calculates date attributes
+SIMULATION_DAYS = []
+for day_idx in range(42):
+    sim_date = START_DATE + timedelta(days=day_idx)
+    SIMULATION_DAYS.append({
+        "date": sim_date,
+        "int": sim_date.weekday()
+    })
 
 
 for store in stores["stores"]:
@@ -91,72 +70,79 @@ for store in stores["stores"]:
         print(f"Hours unknown for {store_id}, skipping.")
         continue
 
-    # One connection checkout for the entire store
+    print(f"[{store_id}] Establishing transaction connection...")
     connection = get_store_connection(store_id)
     cursor = connection.cursor()
 
     try:
-        for day in range(42):
+        total_records_inserted = 0
 
-            sim_date = START_DATE + timedelta(days=day)
+        for day_data in SIMULATION_DAYS:
+            sim_date = day_data["date"]
+            weekday_int = day_data["int"]
+
+            day_sales_batch = []
+
+            # Simulates random days by creating a random offset
+            random_offset = random.choices(
+                RANDOMNESS[level]["values"],
+                weights=RANDOMNESS[level]["weights"]
+            )[0]
+
+            day_base_target = BASE_VOLUME[level] + random_offset
 
             for hour in range(min_max_hours[0], min_max_hours[1]):
 
                 event_count = max(1, round(RUSH_CURVE[hour] *
-                                    WEEKDAY_MULTIPLIER[sim_date.strftime("%A")] *
-                                    (BASE_VOLUME[level] +
-                                    random.choices(RANDOMNESS[level]["values"],
-                                        weights=RANDOMNESS[level]["weights"])[0])))
+                    WEEKDAY_MULTIPLIER[weekday_int] * day_base_target))
 
                 available_items = []
-
                 for item in menu["items"]:
-                    category = item["category"]
-                    availability = HOURS_AVAILABLE[category]
-
-                    if (item["active"] == True and
-                        item["added"] <= sim_date and
-                        hour in range(availability[0], availability[1])):
+                    availability = HOURS_AVAILABLE[item["time_of_day"]]
+                    if (item["active"] and
+                            item["added"] <= sim_date and
+                            hour in range(availability[0], availability[1])):
                         available_items.append(item)
 
-                if not available_items: continue
+                if not available_items:
+                    continue
 
-                # Build the batch for this hour
-                batch = []
+                popularity_weights = [i["popularity"] for i in available_items]
 
                 for _ in range(event_count):
+                    item = random.choices(available_items,
+                                          weights=popularity_weights)[0]
+                    sale_days = item.get("sale_days", [])
+                    sale_price = item.get("sale_price")
 
-                    item = random.choices(
-                        available_items,
-                        weights=[i["popularity"] for i in available_items]
-                    )[0]
-
-                    price = random.choices([item["price"], item["sale_price"]],
-                                            weights=[0.8, 0.2])[0]
+                    if weekday_int in sale_days and sale_price is not None:
+                        price = item["sale_price"]
+                    else:
+                        price = item["price"]
 
                     quantity = random.choices([1, 2, 3],
-                                            weights=[0.7, 0.2, 0.1])[0]
+                                              weights=[0.7, 0.2, 0.1])[0]
 
                     event_time = datetime(
-                        sim_date.year,
-                        sim_date.month,
-                        sim_date.day,
-                        hour,
-                        random.randint(0, 59),
-                        random.randint(0, 59)
+                        sim_date.year, sim_date.month, sim_date.day,
+                        hour, random.randint(0, 59), random.randint(0, 59)
                     )
 
-                    batch.append((item["id"], quantity, price, event_time))
+                    day_sales_batch.append(
+                        (item["id"], quantity, price, event_time))
 
-                # One INSERT for the entire hour's worth of events
+            # Daily addition to sales_events
+            if day_sales_batch:
                 execute_values(cursor, """
                     INSERT INTO sales_events (item_id, quantity, price, created_at)
                     VALUES %s
-                """, batch)
+                """, day_sales_batch)
+                total_records_inserted += len(day_sales_batch)
 
-            # Commit once per day, not once per event
-            connection.commit()
-            print(f"[{store_id}] Day {day + 1}/42 ({sim_date}) complete")
+        # Single commit per store block
+        connection.commit()
+        print(f"[{store_id}] Successfully persisted {total_records_inserted} " \
+              "rows across 6 weeks.")
 
     except Exception as e:
         connection.rollback()

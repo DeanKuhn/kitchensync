@@ -1,22 +1,4 @@
-with latest_hour as (
-
-    select
-        sale_date as latest_date,
-        sale_hour as latest_hour
-
-    from {{ ref('int_sales__rolling_features') }}
-    order by sale_date desc, sale_hour desc
-    limit 1
-
-),
-
-
---                               \/ SELECT THESE \/
--- | store_id | item_id | ... | sale_date | sale_hour |
--- | store_01 | hot_dog | ... | 09/09/21  | 13        |
-
-
-current_sales as (
+with current_sales as (
 
     select
         r.store_id,
@@ -27,14 +9,13 @@ current_sales as (
         r.rolling_2hr
 
     from {{ ref('int_sales__rolling_features') }} r
-    cross join latest_hour lh
-    where r.sale_date = lh.latest_date
-    and r.sale_hour = lh.latest_hour
+
+    qualify row_number() over (
+        partition by r.store_id, r.item_id
+        order by r.sale_date desc, r.sale_hour desc
+    ) = 1
+
 ),
-
-
--- Then, select the rest of the row that matches with the most recent
--- date and hour
 
 
 profile as (
@@ -73,6 +54,16 @@ final as (
 select * from final
 
 
--- ... | current_units | baseline_units | velocity_ratio | urgency_flag
--- ----+---------------+----------------+----------------+-------------
---     | 18            | 12             | 2.0            | URGENT
+/*
+
+--- DATA TRANSFORMATION VISUALIZATION ---
+
+STEP 1: current_sales (Using QUALIFY to get ONLY the latest snapshot)
+STORE_ID | ITEM_ID | SALE_DATE  | SALE_HOUR | CURRENT_UNITS (2HR)
+store_01 | BURGER  | 2026-02-12 | 14        | 18
+
+STEP 2: final (Calculating Real-Time Velocity vs Baseline)
+ITEM_ID | CURRENT | BASELINE | VELOCITY_RATIO | URGENCY_FLAG
+BURGER  | 18      | 9.0      | 2.0            | URGENT (Ratio >= Threshold)
+
+*/

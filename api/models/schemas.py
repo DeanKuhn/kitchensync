@@ -1,7 +1,4 @@
-# Pydantic models for events
-
 from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
 
 class SalesEvent(BaseModel):
@@ -13,9 +10,9 @@ class SalesEvent(BaseModel):
 class WasteEvent(BaseModel):
     item_id: str
     quantity: int
-    reason: str
     created_at: datetime
 
-class InventoryEvent(BaseModel):
+class StockoutEvent(BaseModel):
     item_id: str
-    quantity: int
+    quantity_requested: int
+    created_at: datetime

@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: mart_store_sales
+    description: "The primary fact table for ML training and inference. Joins current rolling demand with historical baselines."
+    columns:
+      - name: store_id
+        description: "Unique identifier for the retail location."
+        tests:
+          - not_null
+      - name: item_id
+        description: "Unique identifier for the menu item."
+        tests:
+          - not_null
+      - name: hourly_quantity
+        description: "The actual number of units sold in this specific hour."
+      - name: rolling_2hr
+        description: "Sum of units sold in the last 2 hourly buckets (including current)."
+      - name: avg_hourly_quantity
+        description: "The historical average quantity for this store/item/hour/day-of-week combination."
+
+  - name: mart_item_velocity
+    description: "A real-time monitoring table that flags items with demand spikes compared to their historical average."
+    columns:
+      - name: velocity_ratio
+        description: "Calculated as current_units / baseline_units. A ratio of 1.0 means demand is exactly average."
+      - name: urgency_flag
+        description: "A status flag (NORMAL/URGENT) based on whether velocity_ratio exceeds the urgency_threshold variable."
+        tests:
+          - accepted_values:
+              values: ['NORMAL', 'URGENT']
+
+  - name: mart_waste_percentage
+    description: "Tracks the ratio of items wasted versus items sold, used for kitchen efficiency KPIs."
+
+  - name: mart_cold_start_profile
+    description: "Fallback baseline profiles for new items (less than 7 days old) based on category-level averages."
+
+  - name: mart_stockout_summary
+    description: "Aggregates missed demand events by store, item, and hour. Used to quantify lost revenue and evaluate production plan sufficiency."
+    columns:
+      - name: total_missed_units
+        description: "The total number of units requested by customers that could not be sold due to zero inventory."
+      - name: event_count
+        description: "The number of unique stockout occurrences in this hour."
+
+  - name: mart_production_targets
+    description: "The 'Golden Model' for kitchen operations. Calculates a prescriptive target inventory for every 15-minute slot using a sliding look-ahead window based on item-specific hold times."
+    columns:
+      - name: slot_index
+        description: "Unique identifier (0-671) for each 15-minute block in a week."
+      - name: target_inventory
+        description: "The sum of predicted units needed to cover the entire freshness/hold-time window starting from this specific slot."
+
+

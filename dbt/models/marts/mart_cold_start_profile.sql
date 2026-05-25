@@ -5,21 +5,11 @@ with profile as (
 ),
 
 
--- store_id | item_id | day_of_week | sale_hour | avg_hourly_quantity | sample_size
--- ---------+---------+-------------+-----------+---------------------+------------
--- store_01 | HOT_DOG | 3           | 12        | 10                  | 40
-
-
 menu as (
 
     select * from {{ ref('menu_items') }}
 
 ),
-
-
--- item_id      | name         | area     | category | active | added
--- -------------+--------------+----------+----------+--------+-----------
--- CHEESEBURGER | Cheeseburger | hot_spot | all_day  | true   | 2024-01-01
 
 
 final as (
@@ -44,6 +34,16 @@ final as (
 select * from final
 
 
--- category | day_of_week | sale_hour | avg_hourly_quantity
--- ---------+-------------+-----------+--------------------
--- all_day  | 5           | 11        | 9
+/*
+
+--- DATA TRANSFORMATION VISUALIZATION ---
+
+STEP 1: item_profile (Detailed averages per item)
+ITEM_ID | CATEGORY | DAY | HOUR | AVG_QTY
+BURGER  | SANDWICH | 1   | 12   | 10.0
+
+STEP 2: final (Category-level averages for "Cold Starts")
+CATEGORY | DAY | HOUR | AVG_CATEGORY_QTY
+SANDWICH | 1   | 12   | 8.5 (Average of all sandwiches)
+
+*/

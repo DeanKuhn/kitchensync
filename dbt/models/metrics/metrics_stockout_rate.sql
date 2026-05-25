@@ -1,8 +1,3 @@
--- Compares the urgency rate grouped by store and item
--- Takes count over 24 hours, so it is operationally useful to find brief
--- trends in time for a store
-
-
 select
     store_id,
     item_id,

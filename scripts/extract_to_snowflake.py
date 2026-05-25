@@ -44,7 +44,16 @@ def ensure_waste_table(sf_cursor):
             store_id VARCHAR,
             item_id VARCHAR,
             quantity INTEGER,
-            reason VARCHAR,
+            created_at TIMESTAMP)
+    """)
+
+
+def ensure_stockout_table(sf_cursor):
+    sf_cursor.execute("""
+        CREATE TABLE IF NOT EXISTS RAW.STOCKOUT_EVENTS (
+            store_id VARCHAR,
+            item_id VARCHAR,
+            quantity_requested INTEGER,
             created_at TIMESTAMP)
     """)
 
@@ -124,6 +133,7 @@ if __name__ == "__main__":
 
     ensure_raw_table(sf_cursor)
     ensure_waste_table(sf_cursor)
+    ensure_stockout_table(sf_cursor)
 
     # SALES
     extract(sf_conn, sf_cursor, "sales_events", "SALES_EVENTS",
@@ -131,7 +141,11 @@ if __name__ == "__main__":
 
     # WASTE
     extract(sf_conn, sf_cursor, "waste_log", "WASTE_LOG",
-            ["item_id", "quantity", "reason", "created_at"])
+            ["item_id", "quantity", "created_at"])
+
+    # STOCKOUT
+    extract(sf_conn, sf_cursor, "stockout_events", "STOCKOUT_EVENTS",
+            ["item_id", "quantity_requested", "created_at"])
 
     sf_cursor.close()
     sf_conn.close()

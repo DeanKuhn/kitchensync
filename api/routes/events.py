@@ -1,18 +1,10 @@
-# POST endpoints defined
-
-# Import FastAPI router and special HTTPException
 from fastapi import APIRouter, HTTPException # type:ignore
-
-# Import Pydantic schemas for schema verification
-from api.models.schemas import SalesEvent, WasteEvent, InventoryEvent
-
-# Import db connection with special search_path function
+from api.models.schemas import SalesEvent, WasteEvent, StockoutEvent
 from api.db.connection import get_store_connection, release_connection
 
 router = APIRouter()
 
 
-# Updated to release pool connection instead of just connection.close()
 def close_and_commit(connection, cursor):
     connection.commit()
     cursor.close()
@@ -24,12 +16,10 @@ def close_not_commit(connection, cursor):
     release_connection(connection)
 
 
-
 @router.post("/{store_id}/sales")
 def create_sales_event(store_id: str, event: SalesEvent):
 
-    # Establish connection with database using the function that gives a
-    # search_path based on store id so there is not need to distinguish schema
+    # Establish connection to the right store based on store id
     connection = get_store_connection(store_id)
     cursor = connection.cursor()
 
@@ -40,15 +30,10 @@ def create_sales_event(store_id: str, event: SalesEvent):
         """, (event.item_id, event.quantity, event.price, event.created_at))
 
         close_and_commit(connection, cursor)
-
-        # Return something showing that the insertion went through smoothly
         return {"status": "ok", "store_id": store_id}
 
     except Exception as e:
         close_not_commit(connection, cursor)
-
-        # Special error raised by FastAPI; returns 500 code meaning something
-        # went wrong
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -60,9 +45,9 @@ def create_waste_event(store_id: str, event: WasteEvent):
 
     try:
         cursor.execute("""
-            INSERT into waste_log (item_id, quantity, reason, created_at)
-            VALUES (%s, %s, %s, %s);
-        """, (event.item_id, event.quantity, event.reason, event.created_at))
+            INSERT into waste_log (item_id, quantity, created_at)
+            VALUES (%s, %s, %s);
+        """, (event.item_id, event.quantity, event.created_at))
 
         close_and_commit(connection, cursor)
         return {"status": "ok", "store_id": store_id}
@@ -72,17 +57,17 @@ def create_waste_event(store_id: str, event: WasteEvent):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{store_id}/inventory")
-def create_inventory_event(store_id: str, event: InventoryEvent):
+@router.post("/{store_id}/stockout")
+def create_stockout_event(store_id: str, event: StockoutEvent):
 
     connection = get_store_connection(store_id)
     cursor = connection.cursor()
 
     try:
         cursor.execute("""
-            INSERT into inventory_snapshots (item_id, quantity)
-            VALUES (%s, %s);
-        """, (event.item_id, event.quantity))
+            INSERT into stockout_log (item_id, quantity_requested, created_at)
+            VALUES (%s, %s, %s);
+        """, (event.item_id, event.quantity_requested, event.created_at))
 
         close_and_commit(connection, cursor)
         return {"status": "ok", "store_id": store_id}

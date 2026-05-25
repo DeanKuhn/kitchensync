@@ -11,25 +11,41 @@ def get_production_plan(store_id):
     # 1. Get Snowflake connection
     engine = get_snowflake_engine()
 
-    # 2. Queries MARTS.PREDICTIONS for latest predicted_at timestamp, filtered
-    # to the given store id
+    # 2. Join PREDICTIONS with MART_STOCKOUT_SUMMARY
+    # We use a LEFT JOIN because we want to see the plan even if there are 0 stockouts
     query = text("""
-        select
-            store_id,
-            item_id,
-            predicted_units,
-            urgency_flag,
-            predicted_at
+        with latest_preds as (
+            select *
+            from MARTS.PREDICTIONS
+            where predicted_at = (select max(predicted_at) from MARTS.PREDICTIONS)
+            and store_id = :store_id
+        ),
 
-        from MARTS.PREDICTIONS
-        where predicted_at = (select max(predicted_at) from MARTS.PREDICTIONS)
-        and store_id = :store_id
+        current_stockouts as (
+            -- We get the missed units for ONLY the most recent hour recorded
+            select
+                item_id,
+                total_missed_units
+            from MARTS.MART_STOCKOUT_SUMMARY
+            where store_id = :store_id
+            and stockout_date = (select max(stockout_date) from MARTS.MART_STOCKOUT_SUMMARY where store_id = :store_id)
+            and stockout_hour = (select max(stockout_hour) from MARTS.MART_STOCKOUT_SUMMARY where store_id = :store_id)
+        )
+
+        select
+            p.item_id,
+            p.predicted_units,
+            p.urgency_flag,
+            coalesce(s.total_missed_units, 0) as missed_units
+
+        from latest_preds p
+        left join current_stockouts s
+            on p.item_id = s.item_id
     """)
 
-    # 3. Return a DataFrame with just item_id, predicted_units, urgency_flag
+    # 3. Return a DataFrame
     df = pd.read_sql(query, engine, params={"store_id": store_id})
     df.columns = df.columns.str.lower()
-    df = df.drop(columns=['store_id', 'predicted_at'])
 
     return df
 
@@ -55,6 +71,5 @@ def get_waste_summary(store_id):
 
     # 3. Return a DataFrame with area, category, waste_cost, and sale_revenue
     df = pd.read_sql(query, engine, params={"store_id": store_id})
-    print(df.columns.tolist())
 
     return df

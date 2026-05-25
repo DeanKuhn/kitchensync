@@ -38,7 +38,6 @@ menu as (
 
     select
         item_id,
-        area,
         category,
         price,
         cost
@@ -52,7 +51,6 @@ final as (
     select
         w.store_id,
         w.item_id,
-        m.area,
         m.category,
         (w.waste_quantity * m.cost) as waste_cost,
         (s.sale_quantity * m.price) as sale_revenue,
@@ -72,3 +70,18 @@ final as (
 
 
 select * from final
+
+
+/*
+
+--- DATA TRANSFORMATION VISUALIZATION ---
+
+STEP 1: Aggregated Sales & Waste (by store/item)
+ITEM_ID | TOTAL_SOLD | TOTAL_WASTED
+BURGER  | 100        | 5
+
+STEP 2: final (The Efficiency KPI)
+ITEM_ID | TOTAL_PRODUCED | WASTE_PCT
+BURGER  | 105            | 4.76%
+
+*/

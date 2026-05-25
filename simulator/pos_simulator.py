@@ -1,66 +1,48 @@
+import asyncio
+import httpx
 import yaml # type:ignore
 import random
-import time
-import datetime
-import threading
-import requests
+import numpy as np
+from datetime import datetime, timedelta
 import pandas as pd
 from sqlalchemy import text # type:ignore
 
 from ml.features import get_snowflake_engine
 
-
+# --- LOAD CONFIGS ---
 with open("config/stores.yaml") as f:
     stores = yaml.safe_load(f)
 
 with open("config/menu.yaml") as f:
     menu = yaml.safe_load(f)
 
+# Ensure date parsing for cold-start logic
+for item in menu["items"]:
+    if isinstance(item["added"], str):
+        item["added"] = datetime.strptime(item["added"], "%Y-%m-%d").date()
 
-TIME_SCALE = 120
+
+# --- CONFIGURATION ---
+TIME_SCALE = 120  # 1 real second = 2 simulation minutes
 API_BASE_URL = "http://localhost:8000"
-TICK_INTERVAL = 2
-START_TIME = datetime.datetime(2026, 2, 12, 0, 0, 0)
+TICK_INTERVAL = 1  # Seconds between loop iterations
+START_TIME = datetime(2026, 2, 12, 0, 0, 0)
 
 RUSH_CURVE = {
-    0: 0.1,
-    1: 0.05,
-    2: 0.05,
-    3: 0.05,
-    4: 0.1,
-    5: 0.2,
-    6: 0.6,
-    7: 0.9,
-    8: 0.9,
-    9: 0.7,
-    10: 0.6,
-    11: 0.8,
-    12: 1,
-    13: 0.8,
-    14: 0.6,
-    15: 0.5,
-    16: 0.8,
-    17: 0.9,
-    18: 0.7,
-    19: 0.5,
-    20: 0.3,
-    21: 0.2,
-    22: 0.1,
-    23: 0.1
+    0: 0.1,  1: 0.05, 2: 0.05, 3: 0.05, 4: 0.1,  5: 0.2,
+    6: 0.6,  7: 0.9,  8: 0.9,  9: 0.7,  10: 0.6, 11: 0.8,
+    12: 1,   13: 0.8, 14: 0.6, 15: 0.5, 16: 0.8, 17: 0.9,
+    18: 0.7, 19: 0.5, 20: 0.3, 21: 0.2, 22: 0.1, 23: 0.1
 }
 
-BASE_VOLUME = {
-    1: 80,
-    2: 140,
-    3: 220,
-    4: 400
-}
+BASE_VOLUME = {1: 80, 2: 140, 3: 220, 4: 400}
+WEIGHTS = [5, 10, 25, 30, 25, 10, 5]
 
 RANDOMNESS = {
-    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": [5, 10, 25, 30, 25, 10, 5]},
-    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": [5, 10, 25, 30, 25, 10, 5]},
-    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": [5, 10, 25, 30, 25, 10, 5]},
-    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": [5, 10, 25, 30, 25, 10, 5]}
+    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": WEIGHTS},
+    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": WEIGHTS},
+    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": WEIGHTS},
+    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": WEIGHTS}
 }
 
 HOURS_AVAILABLE = {
@@ -68,237 +50,267 @@ HOURS_AVAILABLE = {
     "lunch": [10, 22],
     "all_day": [0, 24],
     "chicken": [9, 22],
-    "appetizers": [9, 22],
-    "sides": [9, 22]
 }
 
 WEEKDAY_MULTIPLIER = {
-    "Sunday": 0.7,
-    "Monday": 0.9,
-    "Tuesday": 1.0,
-    "Wednesday": 1.0,
-    "Thursday": 1.2,
-    "Friday": 1.2,
-    "Saturday": 0.8
+    0: 0.9, 1: 1.0, 2: 1.0, 3: 1.2, 4: 1.2, 5: 0.8, 6: 0.7
 }
 
-
-active_batches = {store["id"]: [] for store in stores["stores"]}
-batch_lock = threading.Lock()
-
-predictions = {}
-predictions_lock = threading.Lock()
+# Global state for prescriptive targets: (store_id, slot_index, item_id) -> target_qty
+production_targets = {}
 
 
-def sell_from_batch(store_id, item_id, quantity):
+# --- UTILITY CLASSES ---
+class SimClock:
+    def __init__(self, start_time, time_scale):
+        self.start_time = start_time
+        self.time_scale = time_scale
+        # Record exactly when the simulation started in the real world
+        self.real_start = asyncio.get_event_loop().time()
 
-    with batch_lock:
-        for b in active_batches[store_id]:
-            if b["item_id"] == item_id:
-                b["quantity"] -= quantity
-                if b["quantity"] <= 0:
-                    active_batches[store_id] = [b for b in active_batches[store_id]
-                        if b["quantity"] > 0]
-                break
+    def now(self):
+        """Returns the current simulation datetime."""
+        real_elapsed = asyncio.get_event_loop().time() - self.real_start
+        sim_elapsed_seconds = real_elapsed * self.time_scale
+        return self.start_time + timedelta(seconds=sim_elapsed_seconds)
+
+class StoreState:
+    def __init__(self, store_id):
+        self.store_id = store_id
+        # inventory format: { "ITEM_ID": [batch1, batch2, ...] }
+        self.inventory = {}
 
 
-def fire_sale(store_id, item, sim_now):
+    def add_batch(self, item_id, quantity, expires):
 
-    url = API_BASE_URL + f"/events/{store_id}/sales"
+        # Adds freshly cooked food to the display.
+        if item_id not in self.inventory:
+            self.inventory[item_id] = []
+        self.inventory[item_id].append({"quantity": quantity, "expires": expires})
 
-    item_id = item["id"]
-    normal_price = item["price"]
-    sale_price = item["sale_price"]
-    price = random.choices([normal_price, sale_price], weights=[0.8, 0.2])[0]
-    quantity = random.choices([1, 2, 3], weights=[0.7, 0.2, 0.1])[0]
 
+    def consume(self, item_id, quantity):
+        """Removes food when sold. Returns actual quantity sold."""
+        if item_id not in self.inventory or not self.inventory[item_id]:
+            return 0
+
+        sold = 0
+        while quantity > 0 and self.inventory[item_id]:
+            batch = self.inventory[item_id][0] # FIFO
+            if batch["quantity"] <= quantity:
+                sold += batch["quantity"]
+                quantity -= batch["quantity"]
+                self.inventory[item_id].pop(0)
+            else:
+                batch["quantity"] -= quantity
+                sold += quantity
+                quantity = 0
+        return sold
+
+
+    def get_total_quantity(self, item_id):
+
+        # Returns total quantity available for an item across all batches.
+        return sum(batch["quantity"] for batch in self.inventory.get(item_id, []))
+
+
+# --- API FIRING FUNCTIONS ---
+async def fire_sale(client, store_id, item_id, quantity, price, sim_now):
+    url = f"{API_BASE_URL}/events/{store_id}/sales"
+    payload = {
+        "item_id": item_id,
+        "quantity": int(quantity),
+        "price": float(price),
+        "created_at": sim_now.isoformat()
+    }
     try:
-        requests.post(url,
-            json={"item_id": item_id,
-                  "quantity": quantity,
-                  "price": price,
-                  "created_at": sim_now.isoformat()})
-
-        sell_from_batch(store_id, item_id, quantity)
-
-        print(f"[{store_id}] SALE: {item_id} x{quantity} @ ${price:.2f} | {sim_now}")
+        await client.post(url, json=payload, timeout=5.0)
     except Exception as e:
-        print(f"POST request failed, {e}")
+        print(f"[{store_id}] SALE ERROR: {e}")
 
 
-def fire_waste(store_id, item_id, quantity, sim_now):
-
-    url = API_BASE_URL + f"/events/{store_id}/waste"
-
+async def fire_waste(client, store_id, item_id, quantity, sim_now):
+    url = f"{API_BASE_URL}/events/{store_id}/waste"
+    payload = {
+        "item_id": item_id,
+        "quantity": int(quantity),
+        "created_at": sim_now.isoformat()
+    }
     try:
-        requests.post(url,
-            json={"item_id": item_id,
-                  "quantity": quantity,
-                  "reason": "expired",
-                  "created_at": sim_now.isoformat()})
-        print(f"[{store_id}] WASTE: {item_id} x{quantity} | {sim_now}")
+        await client.post(url, json=payload, timeout=5.0)
+        print(f"[{store_id}] WASTE: {item_id} x{quantity} " \
+              f"| {sim_now.strftime('%H:%M:%S')}")
     except Exception as e:
-        print(f"POST request failed, {e}")
+        print(f"[{store_id}] WASTE ERROR: {e}")
 
 
-def produce_batch(store_id, item, quantity, sim_now):
-
-    item_id = item["id"]
-    item_hold_time = datetime.timedelta(hours=item["hold_time"])
-    expiration_time = sim_now + item_hold_time
-
-    with batch_lock:
-        active_batches[store_id].append({"item_id": item_id,
-                                        "quantity": quantity,
-                                        "expiration_time": expiration_time})
-
-
-def check_expired_batches(store_id, sim_now):
-
-      with batch_lock:
-          expired = [b for b in active_batches[store_id]
-                     if b["expiration_time"] <= sim_now]
-          active_batches[store_id] = [b for b in active_batches[store_id]
-                                      if b["expiration_time"] > sim_now]
-
-      for batch in expired:
-          fire_waste(store_id, batch["item_id"], batch["quantity"], sim_now)
+async def fire_stockout(client, store_id, item_id, quantity_requested, sim_now):
+    url = f"{API_BASE_URL}/events/{store_id}/stockout"
+    payload = {
+        "item_id": item_id,
+        "quantity_requested": int(quantity_requested),
+        "created_at": sim_now.isoformat()
+    }
+    try:
+        await client.post(url, json=payload, timeout=5.0)
+        print(f"[{store_id}] STOCKOUT: {item_id} x{quantity_requested} " \
+              f"requested | {sim_now.strftime('%H:%M:%S')}")
+    except Exception as e:
+        print(f"[{store_id}] STOCKOUT ERROR: {e}")
 
 
-def refresh_production_plan():
+# --- BACKGROUND TASKS ---
+async def refresh_targets_task():
+
+    # Background task to load the 15-minute prescriptive targets from Snowflake.
+    # Since this is a historical profile, we load it once at start and then refresh
+    # only occasionally.
 
     engine = get_snowflake_engine()
+    global production_targets
 
     while True:
-        # Fetch the latest production plan for all stores and items
-        query = text("""
-            select
-                store_id,
-                item_id,
-                predicted_units
+        try:
+            print("[SIMULATOR] Loading 15-min production targets from Snowflake...")
+            query = text("""
+                SELECT store_id, slot_index, item_id, target_inventory
+                FROM MARTS.MART_PRODUCTION_TARGETS
+            """)
 
-            from MARTS.PREDICTIONS
-            where predicted_at = (select max(predicted_at) from MARTS.PREDICTIONS)
-        """)
+            loop = asyncio.get_event_loop()
+            df = await loop.run_in_executor(None, lambda: pd.read_sql(query, engine))
 
-        df = pd.read_sql(query, engine)
-        df.columns = df.columns.str.lower()
-
-        # Rebuild the shared predictions dictionary under lock
-        # so store threads always see a consistent snapshot
-        with predictions_lock:
+            new_targets = {}
             for _, row in df.iterrows():
-                predictions[(row["store_id"], row["item_id"])] = \
-                    row["predicted_units"]
+                # Key: (store_id, slot_index, item_id)
+                key = (row['STORE_ID'], int(row['SLOT_INDEX']), row['ITEM_ID'])
+                new_targets[key] = float(row['TARGET_INVENTORY'])
 
-        print(f"[PREDICTIONS] Refreshed {len(df)} store/item predictions")
+            production_targets = new_targets
+            print(f"[SIMULATOR] Loaded {len(production_targets)} prescriptive targets.")
+        except Exception as e:
+            print(f"[TARGETS ERROR] {e}")
 
-        # Wait 2 real minutes before refreshing again
-        time.sleep(120)
+        # Historical profiles are static; we only refresh every hour just in case
+        await asyncio.sleep(3600)
 
 
-def simulate_store(store):
+# --- SIMULATION FUNCTION ---
+async def simulate_store(config, clock, client):
 
-    store_id = store["id"]
-    level = int(store["level"])
-    hours = store["hours"]
+    store_id = config["id"]
+    level = int(config["level"])
+    store_hours = config["hours"]
 
-    sim_now = START_TIME
+    state = StoreState(store_id)
+    print(f"[{store_id}] Simulator started.")
 
     while True:
-        # Sim now increments every 2 seconds real time, 2 minutes simulation time
-        sim_now += datetime.timedelta(seconds=TICK_INTERVAL * TIME_SCALE)
+        sim_now = clock.now()
         hour = sim_now.hour
-        weekday = sim_now.strftime("%A")
+        weekday_int = sim_now.weekday()
 
-        # Check if the store is not open 24 hours
-        if hours == "5am-11pm" and (hour < 5 or hour >= 23):
-            time.sleep(TICK_INTERVAL)
+        # Calculate current 15-min slot index (0-671)
+        slot_idx = (weekday_int * 96) + (hour * 4) + (sim_now.minute // 15)
+
+        # Check if store is open
+        is_open = True
+        if store_hours == "5am-11pm" and (hour < 5 or hour >= 23):
+            is_open = False
+
+        if not is_open:
+            await asyncio.sleep(TICK_INTERVAL)
             continue
 
-        # Determine event count for each store to create simulated sales
-        event_count = max(1, round(
-            RUSH_CURVE[hour] *
-            WEEKDAY_MULTIPLIER[weekday] *
-            (BASE_VOLUME[level] + random.choices(
-                RANDOMNESS[level]["values"],
-                weights=RANDOMNESS[level]["weights"]
-            )[0])
-        ))
+        # --- 1. SALES GENERATION (Poisson) ---
+        random_offset = random.choices(RANDOMNESS[level]["values"],
+                                       weights=RANDOMNESS[level]["weights"])[0]
+        hourly_lambda = (RUSH_CURVE[hour] * WEEKDAY_MULTIPLIER[weekday_int] *
+                         (BASE_VOLUME[level] + random_offset))
 
-        # Divide by ticks per sim hour so event_count scales correctly
-        # regardless of TIME_SCALE
-        ticks_per_hour = 3600 / (TICK_INTERVAL * TIME_SCALE)
-        event_count /= ticks_per_hour
+        sim_seconds_per_tick = TICK_INTERVAL * TIME_SCALE
+        tick_lambda = (hourly_lambda / 3600) * sim_seconds_per_tick
 
-        # Determine available items based on time and category
-        available_items = []
+        num_customers = np.random.poisson(tick_lambda)
 
+        if num_customers > 0:
+            available_items = [
+                item for item in menu["items"]
+                if item["active"]
+                and item["added"] <= sim_now.date()
+                and hour in range(HOURS_AVAILABLE[item["time_of_day"]][0],
+                                  HOURS_AVAILABLE[item["time_of_day"]][1])
+            ]
+
+            if available_items:
+                popularity_weights = [i["popularity"] for i in available_items]
+                for _ in range(num_customers):
+                    item = random.choices(available_items,
+                                          weights=popularity_weights)[0]
+
+                    qty_to_sell = random.choices([1, 2, 3],
+                                                 weights=[0.7, 0.2, 0.1])[0]
+                    actual_sold = state.consume(item["id"], qty_to_sell)
+
+                    if actual_sold > 0:
+                        price = item["sale_price"] if weekday_int in \
+                            item.get("sale_days", []) else item["price"]
+                        asyncio.create_task(fire_sale(client, store_id,
+                                    item["id"], actual_sold, price, sim_now))
+                    else:
+                        await fire_stockout(client, store_id, item["id"],
+                                            qty_to_sell, sim_now)
+
+        # --- 2. PRODUCTION LOGIC (Sliding Window Replenishment) ---
+        # Instead of fixed hourly jumps, we maintain the 'Target Inventory'
+        # for the current 15-minute slot.
         for item in menu["items"]:
-            category = item["category"]
-            availability = HOURS_AVAILABLE[category]
+            if not item["active"]: continue
 
-            if (item["active"] == True and
-                item["added"] <= sim_now.date() and
-                hour in range(availability[0], availability[1])):
-                available_items.append(item)
+            target_qty = production_targets.get((store_id, slot_idx, item["id"]), 0)
+            current_qty = state.get_total_quantity(item["id"])
 
-        # If no items are available, we simply skip
-        if not available_items:
-            time.sleep(TICK_INTERVAL)
-            continue
+            # If our current shelf stock is below the target needed for
+            # the next hold_time window, cook the difference.
+            if current_qty < target_qty:
+                cook_qty = int(np.ceil(target_qty - current_qty))
+                expiration = sim_now + timedelta(hours=item["hold_time"])
+                state.add_batch(item["id"], cook_qty, expiration)
 
-        # ... and then take the float and use random.random, since many times
-        # the number may be small and round to 0 anyways, like 0.13
-        if random.random() < event_count:
+        # --- 3. WASTE LOGIC ---
+        for item_id, batches in state.inventory.items():
+            expired_batches = [b for b in batches if b["expires"] <= sim_now]
+            state.inventory[item_id] = \
+                [b for b in batches if b["expires"] > sim_now]
 
-            # Choose item based on item popularity
-            item = random.choices(
-                available_items,
-                weights=[i["popularity"] for i in available_items]
-            )[0]
+            for b in expired_batches:
+                asyncio.create_task(fire_waste(
+                    client, store_id, item_id, b["quantity"], sim_now))
 
-            fire_sale(store_id, item, sim_now)
+        await asyncio.sleep(TICK_INTERVAL)
 
-        # --- PRODUCTION LOGIC ---
 
-        # For each available item, check the predicted amounts in the
-        # predictions dictionary
-        for item in available_items:
-            key = (store_id, item["id"])
-            with predictions_lock:
-                predicted = predictions.get(key, 0)
+async def main():
+    clock = SimClock(START_TIME, TIME_SCALE)
+    async with httpx.AsyncClient(limits=httpx.Limits(max_connections=100)) as client:
+        # Initial wait to let the targets load
+        targets_task = asyncio.create_task(refresh_targets_task())
 
-            # Also, check if this is already being produced (meaning it's
-            # been made but hasn't expired yet)
-            with batch_lock:
-                already_producing = any(
-                    b["item_id"] == item["id"]
-                    for b in active_batches[store_id]
-                )
+        print("[SIMULATOR] Waiting for production targets to load...")
+        while not production_targets:
+            await asyncio.sleep(1)
 
-            # If there are more than 0 predicted to sell and the batch
-            # has not expired, create the new batch
-            if predicted > 0 and not already_producing:
-                produce_batch(store_id, item, predicted, sim_now)
+        tasks = [targets_task]
 
-        # Check expired batches, and wait two minutes
-        # for the simulator to fire again
-        check_expired_batches(store_id, sim_now)
-        time.sleep(TICK_INTERVAL)
+        # One simulator task per store
+        for store in stores["stores"]:
+            tasks.append(asyncio.create_task(simulate_store(store, clock, client)))
 
+        print(f"--- SIMULATION STARTED (Scale: {TIME_SCALE}x) ---")
+        await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
-    refresh_thread = threading.Thread(
-        target=refresh_production_plan, daemon=True)
-    refresh_thread.start()
-
-    threads = []
-
-    for store in stores["stores"]:
-        t = threading.Thread(target=simulate_store, args=(store,), daemon=True)
-        t.start()
-        threads.append(t)
-
-    for t in threads:
-        t.join()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nSimulation stopped by user.")

@@ -43,18 +43,6 @@ def get_all_store_items(connection):
 def get_current_features(connection):
 
     query = """
-        with latest as (
-
-            select
-                sale_date as latest_date,
-                sale_hour as latest_hour
-
-            from INTERMEDIATE.INT_SALES__ROLLING_FEATURES
-            order by sale_date desc, sale_hour desc
-            limit 1
-
-        )
-
         select
             ms.store_id,
             ms.item_id,
@@ -73,9 +61,10 @@ def get_current_features(connection):
             and ms.item_id = mv.item_id
         inner join PUBLIC.MENU_ITEMS mi
             on ms.item_id = mi.item_id
-        cross join latest l
-        where ms.sale_date = l.latest_date
-        and ms.sale_hour = l.latest_hour
+        qualify row_number() over (
+            partition by ms.store_id, ms.item_id
+            order by ms.sale_date desc, ms.sale_hour desc
+        ) = 1
     """
 
     df = pd.read_sql(query, connection)
@@ -187,8 +176,12 @@ if __name__ == "__main__":
     print("Loading current conditions from Snowflake...")
     df_features = get_current_features(connection)
 
+    print(df_features['store_id'].nunique())
+
     # Combine features and the grid
     df = grid.merge(df_features, on=["store_id", "item_id"], how="left")
+
+    print(df['sample_size'].isna().sum())
 
     # Create a new column, category, with no null values
     df['category'] = df['category_y'].fillna(df['category_x'])
