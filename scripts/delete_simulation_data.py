@@ -25,6 +25,7 @@ def delete_neon():
 
         cursor.execute("DELETE FROM sales_events WHERE created_at >= %s", (CUTOFF,))
         cursor.execute("DELETE FROM waste_log WHERE created_at >= %s", (CUTOFF,))
+        cursor.execute("DELETE FROM stockout_events WHERE created_at >= %s", (CUTOFF,))
 
         conn.commit()
         cursor.close()
@@ -49,6 +50,15 @@ def delete_snowflake():
 
     cursor.execute("DELETE FROM RAW.WASTE_LOG WHERE created_at >= %s", (CUTOFF,))
     print(f"Deleted simulation rows from RAW.WASTE_LOG.")
+
+    cursor.execute("DELETE FROM RAW.STOCKOUT_EVENTS WHERE created_at >= %s", (CUTOFF,))
+    print(f"Deleted simulation rows from RAW.STOCKOUT_EVENTS.")
+
+    cursor.execute("DELETE FROM MARTS.MART_WASTE_PERCENTAGE WHERE waste_date >= %s", (CUTOFF,))
+    print(f"Deleted simulation rows from MARTS.MART_WASTE_PERCENTAGE.")
+
+    cursor.execute("DELETE FROM MARTS.STOCKOUT_SUMMARY WHERE stockout_date >= %s", (CUTOFF,))
+    print(f"Deleted simulation rows from MARTS.STOCKOUT_SUMMARY.")
 
     cursor.close()
     conn.close()

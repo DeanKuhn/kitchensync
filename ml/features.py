@@ -11,6 +11,19 @@ from urllib.parse import quote_plus
 load_dotenv()
 
 
+FEATURE_COLS = [
+    'store_id',
+    'item_id',
+    'sale_hour',
+    'sale_minute',
+    'slot_index',
+    'day_of_week',
+    'is_weekend',
+    'avg_slot_quantity',
+    'sample_size'
+]
+
+
 def get_snowflake_engine(schema="MARTS"):
     account=os.getenv("SNOWFLAKE_ACCOUNT")
     user=os.getenv("SNOWFLAKE_USER")
@@ -27,21 +40,9 @@ def get_snowflake_engine(schema="MARTS"):
     return create_engine(connection_string)
 
 
-def get_snowflake_connection():
-      return snowflake.connector.connect(
-          account=os.getenv("SNOWFLAKE_ACCOUNT"),
-          user=os.getenv("SNOWFLAKE_USER"),
-          password=os.getenv("SNOWFLAKE_PASSWORD"),
-          database=os.getenv("SNOWFLAKE_DATABASE"),
-          warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
-          role=os.getenv("SNOWFLAKE_ROLE"),
-          schema="MARTS"
-      )
-
-
 def load_features():
 
-    connection = get_snowflake_connection()
+    engine = get_snowflake_engine()
 
     query = """
         select
@@ -49,24 +50,24 @@ def load_features():
             item_id,
             sale_date,
             sale_hour,
+            sale_minute,
+            slot_index,
+            slot_quantity,
             day_of_week,
-            hourly_quantity,
-            rolling_2hr,
-            rolling_4hr,
-            avg_hourly_quantity,
+            avg_slot_quantity,
             sample_size
 
-        from MARTS.MART_STORE_SALES
+        from MARTS.MART_STORE_SALES_15MIN
         where sample_size >= 4
     """
 
-    df = pd.read_sql(query, connection)
-    connection.close()
+    df = pd.read_sql(query, engine)
 
     # Make columns lowercase so they're easier to work with
     df.columns = df.columns.str.lower()
 
     # Adds new column: 1 if Saturday or Sunday, 0 else
     df['is_weekend'] = df['day_of_week'].isin([0, 6]).astype(int)
+
 
     return df

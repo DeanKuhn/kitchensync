@@ -5,18 +5,21 @@ import joblib
 import yaml # type:ignore
 import pandas as pd
 
-from ml.features import get_snowflake_connection, get_snowflake_engine
+from ml.features import get_snowflake_engine
+import ml.features as features
 
 COLD_START_THRESHOLD = 4
+FEATURE_COLS = features.FEATURE_COLS
 
 
-def get_all_store_items(connection):
+def get_all_store_items():
 
     # Get all stores
     with open("config/stores.yaml", "r") as f:
         stores = yaml.safe_load(f)
 
     # Get all active items
+    engine = get_snowflake_engine()
     query = """
         select
             item_id,
@@ -26,7 +29,7 @@ def get_all_store_items(connection):
     """
 
     # Create a df of all items
-    df = pd.read_sql(query, connection)
+    df = pd.read_sql(query, engine)
     df.columns = df.columns.str.lower()
 
     # Create a df of all stores
@@ -40,67 +43,38 @@ def get_all_store_items(connection):
     return grid
 
 
-def get_current_features(connection):
+def get_slot_features():
 
+    engine = get_snowflake_engine()
     query = """
         select
-            ms.store_id,
-            ms.item_id,
-            ms.sale_hour,
-            ms.day_of_week,
-            ms.rolling_2hr,
-            ms.rolling_4hr,
-            ms.avg_hourly_quantity,
-            ms.sample_size,
-            mv.urgency_flag,
-            mi.category
+            p.store_id,
+            p.item_id,
+            p.day_of_week,
+            p.sale_hour,
+            p.sale_minute,
+            p.slot_index,
+            p.avg_slot_quantity,
+            p.sample_size,
+            m.category
 
-        from MARTS.MART_STORE_SALES ms
-        inner join MARTS.MART_ITEM_VELOCITY mv
-            on ms.store_id = mv.store_id
-            and ms.item_id = mv.item_id
-        inner join PUBLIC.MENU_ITEMS mi
-            on ms.item_id = mi.item_id
-        qualify row_number() over (
-            partition by ms.store_id, ms.item_id
-            order by ms.sale_date desc, ms.sale_hour desc
-        ) = 1
+        from INTERMEDIATE.INT_SALES__TIME_OF_DAY_PROFILE p
+        inner join PUBLIC.MENU_ITEMS m
+            on p.item_id = m.item_id
     """
 
-    df = pd.read_sql(query, connection)
+    df = pd.read_sql(query, engine)
     df.columns = df.columns.str.lower()
 
     return df
 
 
-def get_cold_start_profiles(connection):
+def get_cold_start_profiles():
 
-    query = """
-        with latest as (
+    engine = get_snowflake_engine()
+    query = "select * from MARTS.MART_COLD_START_PROFILE"
 
-            select
-                day_of_week,
-                sale_hour as latest_hour
-
-            from INTERMEDIATE.INT_SALES__ROLLING_FEATURES
-            order by sale_date desc, sale_hour desc
-            limit 1
-
-        )
-
-        select
-            cs.category,
-            cs.day_of_week,
-            cs.sale_hour,
-            cs.avg_hourly_quantity
-
-        from MARTS.MART_COLD_START_PROFILE cs
-        cross join latest l
-        where cs.day_of_week = l.day_of_week
-        and cs.sale_hour = l.latest_hour
-    """
-
-    df = pd.read_sql(query, connection)
+    df = pd.read_sql(query, engine)
     df.columns = df.columns.str.lower()
 
     return df
@@ -111,25 +85,18 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
     df_warm = df[df['sample_size'] >= COLD_START_THRESHOLD]
     df_cold = df[~df.index.isin(df_warm.index)]
 
+    # Route items unseen during training to cold-start
+    known_items = set(item_encoder.classes_)
+    unknown_mask = ~df_warm['item_id'].isin(known_items)
+    df_cold = pd.concat([df_cold, df_warm[unknown_mask]])
+    df_warm = df_warm[~unknown_mask]
+
 
     #   --- WARM MODEL ---
 
     # Encode store_id and item_id using saved encoders
     df_warm['store_id'] = store_encoder.transform(df_warm['store_id'])
     df_warm['item_id'] = item_encoder.transform(df_warm['item_id'])
-
-    # Build feature matrix in the same column order as training
-    FEATURE_COLS = [
-        'store_id',
-        'item_id',
-        'sale_hour',
-        'day_of_week',
-        'is_weekend',
-        'rolling_2hr',
-        'rolling_4hr',
-        'avg_hourly_quantity',
-        'sample_size'
-    ]
 
     df_warm['is_weekend'] = df_warm['day_of_week'].isin([0, 6]).astype(int)
 
@@ -147,23 +114,21 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
 
     # Merge both dataframes on category
     df_cold_start = df_cold_start.rename(columns=
-                                    {'avg_hourly_quantity': 'category_avg'})
-    df_cold = df_cold.merge(df_cold_start[['category', 'category_avg']],
-                            on='category')
+                                    {'avg_slot_quantity': 'category_avg',
+                                     'slot_index': 'slot_index'})
+    df_cold = df_cold.merge(df_cold_start[['category', 'slot_index', 'category_avg']],
+                            on=['category', 'slot_index'])
 
     df_cold['predicted_units'] = df_cold['category_avg'].round().astype(int)
-    df_cold['urgency_flag'] = 'NORMAL'
 
 
     # Recombine and return
     combined_df = pd.concat([df_warm, df_cold])
 
-    return combined_df[['store_id', 'item_id', 'predicted_units', 'urgency_flag']]
+    return combined_df[['store_id', 'item_id', 'predicted_units', 'slot_index']]
 
 
 if __name__ == "__main__":
-
-    connection = get_snowflake_connection()
 
     # Load models and encoders
     lgbm = joblib.load("ml/models/lgbm.joblib")
@@ -171,16 +136,18 @@ if __name__ == "__main__":
     item_encoder = joblib.load("ml/models/item_encoder.joblib")
 
     print("Loading items per store...")
-    grid = get_all_store_items(connection)
+    grid = get_all_store_items()
 
     print("Loading current conditions from Snowflake...")
-    df_features = get_current_features(connection)
+    df_features = get_slot_features()
 
+    print("--- df_features['store_id'].nunique() ---")
     print(df_features['store_id'].nunique())
 
     # Combine features and the grid
     df = grid.merge(df_features, on=["store_id", "item_id"], how="left")
 
+    print("--- df['sample_size'].isna().sum() ---")
     print(df['sample_size'].isna().sum())
 
     # Create a new column, category, with no null values
@@ -188,9 +155,8 @@ if __name__ == "__main__":
     df = df.drop(columns=['category_x', 'category_y'])
 
     print("Loading cold start data from Snowflake...")
-    df_cold_start = get_cold_start_profiles(connection)
+    df_cold_start = get_cold_start_profiles()
 
-    connection.close()
 
     print(f"Warm rows: {len(df[df['sample_size'] >= COLD_START_THRESHOLD])}")
     print(f"Cold rows: {len(df[df['sample_size'] < COLD_START_THRESHOLD])}")
@@ -206,7 +172,17 @@ if __name__ == "__main__":
     # Add timestamp, and make sure to append so previous predictions can be
     # observed and learned from
     production_plan['predicted_at'] = pd.Timestamp.now()
-    production_plan.to_sql('predictions', engine, if_exists='append', index=False)
+    production_plan.to_sql('predictions', engine, if_exists='replace', index=False)
 
-    print("\n--- PRODUCTION PLAN ---")
-    print(production_plan.to_string(index=False))
+    print("\n--- PRODUCTION PLAN SUMMARY ---")
+    print(f"Total predictions written : {len(production_plan)}")
+    print(f"Stores covered            : {production_plan['store_id'].nunique()}")
+    print(f"Items covered             : {production_plan['item_id'].nunique()}")
+    print(f"Slots covered             : {production_plan['slot_index'].nunique()}")
+    print(f"Avg predicted units/slot  : {production_plan['predicted_units'].mean():.2f}")
+    print(f"Max predicted units/slot  : {production_plan['predicted_units'].max()}")
+    print(f"\nTop 5 items by avg predicted units:")
+    top_items = (production_plan.groupby('item_id')['predicted_units']
+                 .mean().sort_values(ascending=False).head(5))
+    for item, avg in top_items.items():
+        print(f"  {item:<35} {avg:.2f}")

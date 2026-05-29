@@ -13,3 +13,6 @@ models:
 
   - name: stg_waste_log
     description: "Cleaned and typed waste events, standardized to match the sales schema."
+
+  - name: stg_stockout_events
+    description: "Stockout events tracked."

@@ -10,7 +10,9 @@ items:
     time_of_day: "all_day"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 5
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -23,7 +25,9 @@ items:
     time_of_day: "all_day"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 4
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -36,7 +40,9 @@ items:
     time_of_day: "all_day"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -49,7 +55,9 @@ items:
     time_of_day: "all_day"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -62,7 +70,9 @@ items:
     time_of_day: "all_day"
     category: "sandwich"
     hold_time: 3
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -75,7 +85,9 @@ items:
     time_of_day: "all_day"
     category: "sandwich"
     hold_time: 3
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -89,7 +101,9 @@ items:
     time_of_day: "all_day"
     category: "side"
     hold_time: 1.5
+    cook_time: 5
     popularity: 5
+    batch: 6
     active: true
     added: 2024-01-01
 
@@ -102,7 +116,9 @@ items:
     time_of_day: "all_day"
     category: "side"
     hold_time: 2
+    cook_time: 5
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -115,7 +131,9 @@ items:
     time_of_day: "all_day"
     category: "side"
     hold_time: 2
+    cook_time: 5
     popularity: 4
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -129,7 +147,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 3
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -142,7 +162,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 5
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -155,7 +177,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 4
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -168,7 +192,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 3
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -181,7 +207,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 3
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -194,7 +222,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 3
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -207,7 +237,9 @@ items:
     time_of_day: "all_day"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 3
+    batch: 5
     active: true
     added: 2026-02-12
 
@@ -219,7 +251,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 2.5
+    cook_time: 10
     popularity: 5
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -230,7 +264,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 2.5
+    cook_time: 10
     popularity: 4
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -241,7 +277,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 2.5
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -252,7 +290,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 2.5
+    cook_time: 10
     popularity: 2
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -265,7 +305,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -278,7 +320,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -291,7 +335,9 @@ items:
     time_of_day: "breakfast"
     category: "sandwich"
     hold_time: 3
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -302,9 +348,11 @@ items:
     sale_days: [5, 6]  # Saturday, Sunday
     cost: 1.00
     time_of_day: "breakfast"
-    category: "sandwich"
+    category: "side"
     hold_time: 3
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2026-02-12
 
@@ -318,7 +366,9 @@ items:
     time_of_day: "breakfast"
     category: "side"
     hold_time: 2.5
+    cook_time: 5
     popularity: 4
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -332,7 +382,9 @@ items:
     time_of_day: "breakfast"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 4
+    batch: 5
     active: true
     added: 2025-07-01
 
@@ -345,7 +397,9 @@ items:
     time_of_day: "breakfast"
     category: "roller_grill"
     hold_time: 4
+    cook_time: 10
     popularity: 3
+    batch: 5
     active: true
     added: 2024-01-01
 
@@ -359,7 +413,9 @@ items:
     time_of_day: "lunch"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 4
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -372,7 +428,9 @@ items:
     time_of_day: "lunch"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -385,7 +443,9 @@ items:
     time_of_day: "lunch"
     category: "sandwich"
     hold_time: 2
+    cook_time: 10
     popularity: 3
+    batch: 4
     active: true
     added: 2024-01-01
 
@@ -399,7 +459,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 3
+    cook_time: 15
     popularity: 4
+    batch: 3
     active: true
     added: 2025-06-01
 
@@ -412,7 +474,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 3
+    cook_time: 15
     popularity: 3
+    batch: 3
     active: true
     added: 2025-06-01
 
@@ -425,7 +489,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 2
+    cook_time: 15
     popularity: 4
+    batch: 3
     active: true
     added: 2025-06-01
 
@@ -438,7 +504,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 2
+    cook_time: 15
     popularity: 3
+    batch: 3
     active: true
     added: 2025-06-01
 
@@ -451,7 +519,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 3
+    cook_time: 15
     popularity: 2
+    batch: 2
     active: true
     added: 2025-06-01
 
@@ -464,7 +534,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 2
+    cook_time: 15
     popularity: 2
+    batch: 2
     active: true
     added: 2025-06-01
 
@@ -477,7 +549,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 4
+    cook_time: 15
     popularity: 1
+    batch: 2
     active: true
     added: 2025-06-01
 
@@ -488,7 +562,9 @@ items:
     time_of_day: "chicken"
     category: "chicken"
     hold_time: 4
+    cook_time: 15
     popularity: 1
+    batch: 2
     active: false
     added: 2025-06-01
 
@@ -502,7 +578,9 @@ items:
     time_of_day: "chicken"
     category: "appetizer"
     hold_time: 1.5
+    cook_time: 5
     popularity: 3
+    batch: 4
     active: true
     added: 2025-06-01
 
@@ -515,7 +593,9 @@ items:
     time_of_day: "chicken"
     category: "appetizer"
     hold_time: 1.5
+    cook_time: 5
     popularity: 4
+    batch: 4
     active: true
     added: 2025-06-01
 
@@ -528,7 +608,9 @@ items:
     time_of_day: "chicken"
     category: "appetizer"
     hold_time: 1.5
+    cook_time: 5
     popularity: 4
+    batch: 4
     active: true
     added: 2025-06-01
 
@@ -541,7 +623,9 @@ items:
     time_of_day: "chicken"
     category: "appetizer"
     hold_time: 1.5
+    cook_time: 5
     popularity: 4
+    batch: 4
     active: true
     added: 2025-06-01
 
@@ -554,7 +638,9 @@ items:
     time_of_day: "chicken"
     category: "appetizer"
     hold_time: 1.5
+    cook_time: 5
     popularity: 3
+    batch: 4
     active: true
     added: 2026-02-12
 
@@ -567,7 +653,9 @@ items:
     time_of_day: "chicken"
     category: "appetizer"
     hold_time: 1.5
+    cook_time: 5
     popularity: 3
+    batch: 4
     active: true
     added: 2025-06-01
 
@@ -581,7 +669,9 @@ items:
     time_of_day: "chicken"
     category: "side"
     hold_time: 4
+    cook_time: 5
     popularity: 3
+    batch: 3
     active: true
     added: 2025-06-01
 
@@ -594,6 +684,8 @@ items:
     time_of_day: "chicken"
     category: "side"
     hold_time: 4
+    cook_time: 5
     popularity: 2
+    batch: 3
     active: true
     added: 2025-06-01

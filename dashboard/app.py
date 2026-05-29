@@ -9,8 +9,9 @@ from dashboard.components.waste_summary import waste_summary
 from dashboard.utils.data_fetch import get_production_plan, get_waste_summary
 
 # --- LIVE REFRESH ---
-# Refresh every 60 seconds to pick up new simulation data from Snowflake
-st_autorefresh(interval=60000, key="datarefresh")
+# Refresh every 5 minutes since the pos simulator extracts to Snowflake every
+# 5 minutes
+st_autorefresh(interval=300000, key="datarefresh")
 
 st.set_page_config(page_title="KitchenSync Dashboard", layout="wide")
 st.title('KitchenSync Production Plan')

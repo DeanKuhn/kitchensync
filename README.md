@@ -1,16 +1,18 @@
-# KitchenSync Food Forecasting System
+# KitchenSync
 
-A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS). The system uses a real-time data pipeline, a multi-store Postgres architecture, a dbt-powered Snowflake analytics warehouse, and a LightGBM forecasting model to produce per-store food production plans — refreshed every 60 seconds.
+A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). KitchenSync ingests real-time simulated POS events, transforms them through a dbt + Snowflake analytics pipeline, and feeds a LightGBM forecasting model that produces per-store, per-item food production plans at 15-minute slot grain. A Streamlit dashboard surfaces the results for kitchen staff — split into separate Kitchen and Chicken production queues, refreshed every 5 minutes.
+
+Built by someone who works with the real system daily.
 
 ---
 
-## What This Project Demonstrates
+## What This Demonstrates
 
-- **Robust data pipeline engineering** — async POS event ingestion via FastAPI, per-store schema isolation in Neon (Postgres), and a sync pipeline into Snowflake
-- **Modern analytics stack** — dbt Core transformations across staging → intermediate → mart layers with clean schema separation and column-level documentation
-- **ML model development** — baseline scikit-learn model vs. production LightGBM, feature engineering from time-series sales data, cold-start handling for new menu items
-- **Scalable architecture** — 12 simulated stores across 4 Midwest regions, each treated as an independent forecasting unit; config-file-driven menu allows items to be toggled without code changes
-- **End-to-end thinking** — from raw POS event to kitchen staff production plan displayed in a live Streamlit dashboard with missed demand tracking
+- **End-to-end data engineering** — async POS event ingestion → Postgres → Snowflake → dbt → ML → live dashboard
+- **Deliberate architectural tradeoffs** — per-store schema isolation in Neon for transactional writes; consolidated single-table design in Snowflake for cross-store analytics and model training
+- **Production-grade dbt pipeline** — staging → intermediate → mart layers with clean schema separation, `QUALIFY` window patterns for per-store snapshots, and a custom `generate_schema_name` macro
+- **ML feature engineering** — 15-minute slot grain demand profiles across 672 weekly slots per store/item; cold-start handling for new menu items via category-level fallback
+- **Realistic simulator design** — Poisson arrivals, FIFO batch inventory, slot-boundary production logic, cook times, RUSH_CURVE-scaled batch sizes, and startup inventory seeding
 
 ---
 
@@ -34,25 +36,26 @@ A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS)
                                           ┌───────────────────┴───────────────────┐
                                           ▼                                       ▼
                                     KS_DB.STAGING                      KS_DB.INTERMEDIATE
-                                  stg_sales_events                int_sales__rolling_features
+                                  stg_sales_events              int_sales__rolling_features_15min
                                    stg_waste_log               int_sales__time_of_day_profile
                                                                                   │
                                                                                   ▼
                                                                           KS_DB.MARTS
-                                                                        mart_store_sales
-                                                                       mart_item_velocity
-                                                                   mart_cold_start_profile
-                                                                   mart_production_targets
-                                                                    mart_waste_percentage
-                                                                    mart_stockout_summary
+                                                                      mart_store_sales_15min
+                                                                     mart_cold_start_profile
+                                                                      mart_waste_percentage
+                                                                      mart_stockout_summary
                                                                                   │
-                                                                       [ML Pipeline]
-                                                                      ml/train.py (LightGBM)
-                                                                      ml/predict.py → MARTS.PREDICTIONS
+                                                                         [ML Pipeline]
+                                                                    ml/train.py (LightGBM)
+                                                          ml/predict.py → MARTS.PREDICTIONS
+                                                              (190,773 predictions: 12 stores
+                                                               × 42 items × 672 slots)
                                                                                   │
                                                                       [Streamlit Dashboard]
-                                                              Per-store production queue (60s refresh)
-                                                          NORMAL / URGENT flags + Missed Demand tracking
+                                                         Split Kitchen / Chicken production queues
+                                                         Current 15-min slot | 5-min auto-refresh
+                                                              Missed Demand + Waste Summary
 ```
 
 ---
@@ -78,29 +81,62 @@ A portfolio project simulating a Kwik Trip-style Kitchen Production System (KPS)
 ## How It Works
 
 ### 1. POS Simulation
-An async Python simulator (httpx + asyncio) fires fake point-of-sale events to the ingest API, mimicking realistic store traffic using a Poisson distribution for customer arrivals and a time-of-day rush curve. Each store runs as an independent async task. A `StoreState` class tracks FIFO batch inventory — food is produced based on ML predictions, consumed when sold, and logged as waste when it expires past its hold time. Stockout events are fired when a customer requests an item with no inventory.
+
+An async Python simulator fires fake point-of-sale events to the ingest API using Poisson-distributed customer arrivals shaped by a per-hour `RUSH_CURVE`. Each store runs as an independent async task.
+
+A `StoreState` class tracks FIFO batch inventory per item. Production decisions fire **once per 15-minute slot boundary** — not every tick. The look-ahead window equals the item's hold time, so the kitchen always cooks enough to cover the full shelf life. Cook quantities are scaled by `RUSH_CURVE[hour]` to prevent over-production at 3am and under-production at noon. On startup, inventory is pre-seeded from the current slot's predictions so the kitchen starts with realistic stock rather than empty shelves.
 
 ### 2. Ingest API
-A FastAPI application receives live events and writes them to the appropriate store schema in Neon (Postgres). Each of the 12 stores has its own schema (`store_012`, `store_027`, etc.), demonstrating horizontal schema isolation. Three endpoints handle sales, waste, and stockout events.
+
+A FastAPI application receives live events and writes them to the appropriate store schema in Neon. Each of the 12 stores has its own Postgres schema (`store_012`, `store_027`, etc.) — isolating transactional writes at the schema level and demonstrating a realistic multi-tenant database pattern.
 
 ### 3. Snowflake Extract
-A Python script (`scripts/extract_to_snowflake.py`) pulls all sales and waste events from Neon and loads them into `KS_DB.RAW` in Snowflake. Full reload on each run.
+
+`scripts/extract_to_snowflake.py` pulls all sales and waste events from all 12 Neon schemas and loads them into `KS_DB.RAW` in Snowflake as a single consolidated table with a `store_id` column. This is an intentional design contrast: per-store isolation for writes, unified table for analytics.
 
 ### 4. dbt Pipeline
-dbt Core transforms raw events through three layers in Snowflake:
-- **Staging** — cleans and types raw events; derives `sale_date`, `sale_hour`, `day_of_week`
-- **Intermediate** — computes rolling 2hr and 4hr sales aggregates; builds historical time-of-day demand profiles per store + item + hour + day-of-week
-- **Marts** — business logic layer: production targets, item velocity and urgency flags, waste percentage, cold-start profiles, stockout summaries
 
-### 5. ML Forecasting Model
-A LightGBM model predicts units to produce per item per store. Features include time-of-day, day-of-week, rolling sales windows, and historical demand profiles. Items are flagged:
-- `NORMAL` — demand is within historical norms
-- `URGENT` — current sell-through rate exceeds historical average by 2x (configurable)
+dbt Core transforms raw events through three layers:
 
-Items with fewer than 4 data points fall back to category-level averages from `mart_cold_start_profile`.
+- **Staging** — cleans and types raw events; derives `sale_date`, `sale_hour`, `sale_minute`, `day_of_week`, and `slot_index` (15-min grain, 0–671)
+- **Intermediate** — `int_sales__rolling_features_15min` aggregates sales to slot buckets; `int_sales__time_of_day_profile` builds historical average demand per store + item + slot across the full 672-slot weekly cycle
+- **Marts** — business logic layer: `mart_store_sales_15min` (wide fact table, per-store QUALIFY pattern), `mart_cold_start_profile` (category-level slot averages), `mart_waste_percentage` (monetary waste formula with units sold), `mart_stockout_summary` (missed demand by hour)
+
+All mart models use `QUALIFY ROW_NUMBER() OVER (PARTITION BY store_id, item_id ORDER BY ...)` for per-store snapshots — never a global `LIMIT 1`, which would silently return only the most-advanced store.
+
+### 5. ML Forecasting
+
+A LightGBM model predicts units to produce per store, per item, per 15-minute slot. Features are sourced from `int_sales__time_of_day_profile` and include `slot_index`, `sale_hour`, `sale_minute`, `day_of_week`, `is_weekend`, `avg_slot_quantity`, and label-encoded `store_id` / `item_id`.
+
+Inference produces **190,773 predictions** covering all 672 slots × 12 stores × 42 active items — a complete weekly production profile. Items with fewer than 4 historical data points fall back to category-level averages from `mart_cold_start_profile`.
 
 ### 6. Streamlit Dashboard
-An interactive dashboard refreshes every 60 seconds. Kitchen staff see a production queue with urgency flags, a "Mark Complete" checkbox per item (persisted in session state), and a missed demand column showing units lost to stockouts. A waste summary below shows Hot Foods, Roller Grill, and Chicken waste percentages for the most recent day.
+
+The dashboard queries `MARTS.PREDICTIONS` for the current 15-minute slot (computed from wall-clock time) and displays two separate production queues matching the real KPS layout:
+
+- **[Kitchen]** — sandwiches, sides, roller grill items
+- **[Chicken]** — chicken pieces and appetizers
+
+Each table shows predicted units and missed demand (units lost to stockouts). Kitchen staff can check off completed batches — done items move to a completed table and are removed from the active queue. Session state persists checkboxes across the 5-minute auto-refresh. A waste summary below shows units sold, total sales revenue, and waste percentage per category group (Hot Foods / Roller Grill / Chicken).
+
+---
+
+## Key Design Decisions
+
+**Per-store Postgres schemas vs. consolidated Snowflake table**
+Each store gets its own schema in Neon (`search_path` scopes all queries automatically), but all stores share a single table in Snowflake with a `store_id` column. The transactional layer is optimized for isolated writes; the analytics layer is optimized for cross-store queries and model training. Same data, two different structures, two different jobs.
+
+**15-minute slot grain for ML**
+Rather than predicting hourly demand, the model operates at 15-minute resolution — 96 slots per day, 672 per week. This matches the real KPS planning cycle and allows the simulator's slot-boundary production logic to consume predictions directly without any aggregation step.
+
+**Slot-boundary production logic**
+Cook decisions fire once per slot change, not every simulator tick. The look-ahead window is `hold_time * 4` slots — the kitchen cooks enough to cover the item's full shelf life. This mirrors how real kitchen staff think: cook for the window, not the moment.
+
+**No retraining during simulation**
+`MARTS.PREDICTIONS` is a static weekly profile loaded once at simulator startup. The background pipeline (running every 5 minutes) runs extract + dbt only — never predict or train. Replacing the predictions table mid-simulation would corrupt the production logic and destabilize the dashboard.
+
+**LightGBM over Prophet**
+Prophet is a black box for interviews. LightGBM allows explicit feature engineering that can be explained and defended — time-of-day profiles, cold-start fallbacks, label encoding choices — all of which are meaningful talking points.
 
 ---
 
@@ -108,32 +144,36 @@ An interactive dashboard refreshes every 60 seconds. Kitchen staff see a product
 
 ```
 kitchensync/
-├── config/                    # menu.yaml, stores.yaml
-├── data/seeds/                # menu_items.csv (dbt seed)
+├── config/
+│   ├── menu.yaml              # Items: id, category, hold_time, cook_time, batch_size, popularity
+│   └── stores.yaml            # 12 stores, 4 regions, traffic levels 1–4
 ├── simulator/
-│   ├── pos_simulator.py       # Live async simulator (httpx + asyncio)
-│   └── historical_generator.py # Batch historical data generator
+│   ├── pos_simulator.py       # Live async simulator
+│   └── historical_generator.py # 42-day historical data generator
 ├── api/
-│   ├── main.py
 │   ├── routes/events.py       # POST /sales, /waste, /stockout
-│   ├── models/schemas.py      # Pydantic: SalesEvent, WasteEvent, StockoutEvent
+│   ├── models/schemas.py      # Pydantic event models
 │   └── db/connection.py       # Neon connection pool, per-store search_path
 ├── dbt/
-│   ├── macros/generate_schema_name.sql
+│   ├── macros/                # generate_schema_name.sql
 │   └── models/
 │       ├── staging/           # stg_sales_events, stg_waste_log
-│       ├── intermediate/      # int_sales__rolling_features, int_sales__time_of_day_profile
-│       └── marts/             # mart_store_sales, mart_item_velocity, mart_cold_start_profile,
-│                              # mart_production_targets, mart_waste_percentage, mart_stockout_summary
-├── ml/                        # features.py, train.py, predict.py, evaluate.py
+│       ├── intermediate/      # int_sales__rolling_features_15min, int_sales__time_of_day_profile
+│       └── marts/             # mart_store_sales_15min, mart_cold_start_profile,
+│                              # mart_waste_percentage, mart_stockout_summary
+├── ml/
+│   ├── features.py            # FEATURE_COLS, Snowflake engine
+│   ├── train.py               # LightGBM training
+│   └── predict.py             # Inference → MARTS.PREDICTIONS (190,773 rows)
 ├── dashboard/
-│   ├── app.py
+│   ├── app.py                 # Streamlit entry point
 │   ├── components/            # production_plan.py, waste_summary.py, store_selector.py
-│   └── utils/data_fetch.py
+│   └── utils/data_fetch.py    # get_production_plan(), get_waste_summary()
 └── scripts/
-    ├── init_db.py             # One-time Neon schema + table creation
+    ├── init_db.py             # One-time Neon schema creation
     ├── extract_to_snowflake.py
-    └── run_pipeline.py        # Extract → dbt → train → predict
+    ├── run_prediction_update.py  # extract + dbt (runs every 5 min during simulation)
+    └── run_training.py           # full pipeline including train (run manually)
 ```
 
 ---
@@ -142,28 +182,17 @@ kitchensync/
 
 ### Prerequisites
 - Python 3.12+
-- uv (`pip install uv`)
+- [uv](https://github.com/astral-sh/uv) — `pip install uv`
 - Neon account (free tier sufficient)
 - Snowflake account (free trial sufficient)
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and fill in:
-
 ```bash
 cp .env.example .env
 ```
 
-```
-NEON_DATABASE_URL=postgresql://...
-SNOWFLAKE_ACCOUNT=
-SNOWFLAKE_USER=
-SNOWFLAKE_PASSWORD=
-SNOWFLAKE_DATABASE=KS_DB
-SNOWFLAKE_WAREHOUSE=KS_WH
-SNOWFLAKE_ROLE=
-URGENCY_THRESHOLD=2.0
-```
+Fill in Neon, Snowflake, API, and simulator credentials. See `.env.example` for all required fields.
 
 ### Install Dependencies
 
@@ -171,63 +200,54 @@ URGENCY_THRESHOLD=2.0
 uv sync
 ```
 
-### Run the System
+### First-Time Setup
 
 ```bash
-# 1. Initialize Neon schemas (one time)
+# 1. Initialize Neon schemas (one time only)
 PYTHONPATH=. uv run python scripts/init_db.py
 
-# 2. Generate historical data (42 days)
-PYTHONPATH=. uv run python simulator/historical_generator.py
+# 2. Generate 42 days of historical data (Jan 1 – Feb 11, 2026)
+PYTHONPATH=. uv run python -m simulator.historical_generator
 
-# 3. Run the full pipeline (extract → dbt → train → predict)
-PYTHONPATH=. uv run python -m scripts.run_pipeline
+# 3. Upload menu seed data to Snowflake
+uv run dbt seed --project-dir dbt
 
-# 4. Start the ingest API
-PYTHONPATH=. uv run uvicorn api.main:app --reload --port 8000
-
-# 5. Start the live POS simulator (separate terminal)
-PYTHONPATH=. uv run python simulator/pos_simulator.py
-
-# 6. Launch the dashboard
-PYTHONPATH=. uv run streamlit run dashboard/app.py
+# 4. Run the full pipeline (extract → dbt → train → predict)
+PYTHONPATH=. uv run python -m scripts.run_training
 ```
 
----
-
-## Menu Configuration
-
-Items are defined in `config/menu.yaml`. Key fields:
-
-```yaml
-- id: "CHEESEBURGER"
-  name: "Cheeseburger"
-  price: 2.99
-  sale_price: 1.99
-  sale_days: [2]      # Wednesday (0=Monday, 6=Sunday)
-  cost: 1.20
-  time_of_day: "all_day"   # all_day | breakfast | lunch | chicken
-  category: "sandwich"     # sandwich | side | roller_grill | chicken | appetizer
-  hold_time: 2
-  popularity: 5
-  active: true
-  added: 2024-01-01
-```
-
-- Set `active: false` to retire an item — excluded from forecasting automatically
-- Omit `sale_price` and `sale_days` for items that never go on sale
-- `time_of_day` drives availability windows; `category` drives waste grouping and cold-start profiles
-
----
-
-## dbt Commands
+### Running the System
 
 ```bash
-cd dbt
+# Terminal 1 — Ingest API
+PYTHONPATH=. uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 
-uv run dbt run                          # all models
-uv run dbt run --select <model_name>    # single model
-uv run dbt compile --select <model>     # syntax check only
-uv run dbt seed                         # upload menu_items.csv to Snowflake
-uv run dbt test                         # run data quality tests
+# Terminal 2 — Streamlit dashboard
+PYTHONPATH=. uv run streamlit run dashboard/app.py
+
+# Terminal 3 — Live POS simulator
+PYTHONPATH=. uv run python -m simulator.pos_simulator
 ```
+
+---
+
+## Store & Menu Configuration
+
+**12 stores** across 4 Midwest regions (West Wisconsin, South Wisconsin, Minnesota, Iowa). Traffic levels 1–4 control simulated sales volume.
+
+**42 active menu items** across 5 categories: `sandwich`, `side`, `roller_grill`, `chicken`, `appetizer`. Items map to two dashboard production queues:
+- **Kitchen** — sandwich + side + roller_grill
+- **Chicken** — chicken + appetizer
+
+New items added to `config/menu.yaml` are automatically handled by the cold-start fallback until sufficient sales history accumulates (threshold: 4 data points). Set `active: false` to retire an item without touching any code.
+
+---
+
+## Simulated Timeline
+
+| Period | Data |
+|---|---|
+| Jan 1 – Feb 11, 2026 | 42 days of synthetic historical data (~2.7M events) |
+| Feb 12, 2026 onward | Live simulation |
+
+Cold-start items (added Feb 12): `CHIMI`, `BUFFALO_CHICKEN_ROLLERBITES`, `JALAPENO_BITES`

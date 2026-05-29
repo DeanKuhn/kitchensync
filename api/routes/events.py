@@ -65,7 +65,7 @@ def create_stockout_event(store_id: str, event: StockoutEvent):
 
     try:
         cursor.execute("""
-            INSERT into stockout_log (item_id, quantity_requested, created_at)
+            INSERT into stockout_events (item_id, quantity_requested, created_at)
             VALUES (%s, %s, %s);
         """, (event.item_id, event.quantity_requested, event.created_at))
 

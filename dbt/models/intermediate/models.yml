@@ -1,20 +1,20 @@
 version: 2
 
 models:
-  - name: int_sales__rolling_features
-    description: "Aggregates sales to an hourly grain and computes rolling windows (2hr, 4hr). These features capture short-term momentum."
+  - name: int_sales__rolling_features_15min
+    description: "Aggregates sales to 15-minute slot grain and computes rolling windows (4 slots = 1hr, 8 slots = 2hr). Feeds the 15-min ML feature store."
     columns:
-      - name: hourly_quantity
-        description: "Total units sold for a specific store/item/hour."
-      - name: rolling_2hr
-        description: "Rolling sum of current hour and 1 preceding hour. Represents immediate trend."
-      - name: rolling_4hr
-        description: "Rolling sum of current hour and 3 preceding hours. Represents sustained trend."
+      - name: slot_index
+        description: "Integer 0-671 identifying the 15-min slot within the week. Formula: (day_of_week * 96) + (sale_hour * 4) + (sale_minute / 15)."
+      - name: sale_minute
+        description: "Minute bucket for this slot: 0, 15, 30, or 45."
+      - name: slot_quantity
+        description: "Total units sold for a specific store/item/15-min slot."
 
   - name: int_sales__time_of_day_profile
     description: "Calculates the historical average demand per store, item, day of week, and hour. Serves as the 'Expected Baseline' for the system."
     columns:
-      - name: avg_hourly_quantity
+      - name: avg_slot_quantity
         description: "The arithmetic mean of units sold across all observed weeks for this specific time slot."
       - name: sample_size
         description: "The number of unique weeks contributing to the average. Higher values indicate higher baseline reliability."

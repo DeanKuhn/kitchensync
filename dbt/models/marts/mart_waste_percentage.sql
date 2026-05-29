@@ -55,6 +55,7 @@ final as (
         (w.waste_quantity * m.cost) as waste_cost,
         (s.sale_quantity * m.price) as sale_revenue,
         w.waste_date,
+        s.sale_quantity,
         ((w.waste_quantity * m.cost) / nullif(s.sale_quantity * m.price, 0)) * 100
             as waste_percentage
 

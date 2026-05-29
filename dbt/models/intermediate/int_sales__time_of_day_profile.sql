@@ -13,6 +13,7 @@ fifteen_min as (
         sale_date,
         sale_hour,
         sale_minute,
+        (day_of_week * 96) + (sale_hour * 4) + FLOOR(sale_minute / 15) as slot_index,
         day_of_week,
         sum(quantity) as quantity
 
@@ -24,6 +25,7 @@ fifteen_min as (
         sale_date,
         sale_hour,
         sale_minute,
+        slot_index,
         day_of_week
 
 ),
@@ -37,7 +39,8 @@ profile as (
         day_of_week,
         sale_hour,
         sale_minute,
-        avg(quantity) as avg_hourly_quantity,
+        slot_index,
+        avg(quantity) as avg_slot_quantity,
         count(*) as sample_size
 
     from fifteen_min
@@ -45,9 +48,10 @@ profile as (
     group by
         store_id,
         item_id,
-        day_of_week,
         sale_hour,
-        sale_minute
+        sale_minute,
+        slot_index,
+        day_of_week
 
 )
 
@@ -65,6 +69,6 @@ store_01 | BURGER  | 12        | 0           | 3
 store_01 | BURGER  | 12        | 15          | 2
 
 STEP 2: profile (Historical averages per 15-min block)
-STORE_ID | ITEM_ID | DAY_OF_WEEK | HOUR | MINUTE | AVG_HOURLY_QUANTITY
+STORE_ID | ITEM_ID | DAY_OF_WEEK | HOUR | MINUTE | AVG_SLOT_QUANTITY
 store_01 | BURGER  | 1 (Mon)     | 12   | 0      | 2.8
 */
