@@ -371,7 +371,7 @@ async def simulate_store(config, clock, client):
                 # CHECKPOINT: Batch logic lives here
                 cook_qty = int(np.ceil(max(
                     item["batch"] * RUSH_CURVE[hour], gap))
-                    ) if gap > 0 else 0
+                    ) if gap > 1 else 0
 
                 if cook_qty > 0:
                     ready_at = sim_now + timedelta(minutes=item["cook_time"])
