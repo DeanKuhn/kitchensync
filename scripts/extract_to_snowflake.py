@@ -18,7 +18,7 @@ def get_snowflake_connection():
     return snowflake.connector.connect(
         account=os.getenv("SNOWFLAKE_ACCOUNT"),
         user=os.getenv("SNOWFLAKE_USER"),
-        private_key_file="/home/bibba/.ssh/snowflake_rsa.p8",
+        private_key_file="/home/ubuntu/.ssh/snowflake_rsa.p8",
         database=os.getenv("SNOWFLAKE_DATABASE"),
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
         role=os.getenv("SNOWFLAKE_ROLE"),
