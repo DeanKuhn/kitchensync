@@ -5,8 +5,9 @@ import os
 import pandas as pd
 import snowflake.connector # type:ignore
 from sqlalchemy import create_engine # type:ignore
+from cryptography.hazmat.primitives.serialization import load_pem_private_key # type:ignore
 from dotenv import load_dotenv # type:ignore
-from urllib.parse import quote_plus
+
 
 load_dotenv()
 
@@ -15,7 +16,6 @@ FEATURE_COLS = [
     'store_id',
     'item_id',
     'sale_hour',
-    'sale_minute',
     'slot_index',
     'day_of_week',
     'is_weekend',
@@ -25,19 +25,22 @@ FEATURE_COLS = [
 
 
 def get_snowflake_engine(schema="MARTS"):
+    with open("/home/bibba/.ssh/snowflake_rsa.p8", "rb") as f:
+        private_key = load_pem_private_key(f.read(), password=None)
     account=os.getenv("SNOWFLAKE_ACCOUNT")
     user=os.getenv("SNOWFLAKE_USER")
-    password=quote_plus(os.getenv("SNOWFLAKE_PASSWORD"))
     database=os.getenv("SNOWFLAKE_DATABASE")
     warehouse=os.getenv("SNOWFLAKE_WAREHOUSE")
     role=os.getenv("SNOWFLAKE_ROLE")
 
     connection_string = (
-        f"snowflake://{user}:{password}@{account}/{database}/{schema}"
-        f"?warehouse={warehouse}&role={role}"
+        f"snowflake://{user}@{account}/{database}/{schema}"
+        f"?warehouse={warehouse}"
+        f"&role={role}"
     )
 
-    return create_engine(connection_string)
+    return create_engine(connection_string,
+        connect_args = {"private_key": private_key})
 
 
 def load_features():
@@ -50,14 +53,13 @@ def load_features():
             item_id,
             sale_date,
             sale_hour,
-            sale_minute,
             slot_index,
             slot_quantity,
             day_of_week,
             avg_slot_quantity,
             sample_size
 
-        from MARTS.MART_STORE_SALES_15MIN
+        from MARTS.MART_ML_TRAINING_FEATURES
         where sample_size >= 4
     """
 

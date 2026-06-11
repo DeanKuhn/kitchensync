@@ -27,7 +27,7 @@ for item in menu["items"]:
 TIME_SCALE = 20
 API_BASE_URL = "http://localhost:8000"
 TICK_INTERVAL = 1
-START_TIME = datetime(2026, 2, 12, 0, 0, 0)
+START_TIME = datetime.now()
 
 RUSH_CURVE = {
     0: 0.1,  1: 0.05, 2: 0.05, 3: 0.05, 4: 0.1,  5: 0.2,
@@ -100,9 +100,9 @@ class StoreState:
                 if b["ready_at"] <= sim_now:
                     self.inventory[item_id].append({"quantity": b["quantity"],
                                                     "expires": b["expires"]})
-                    print(f"[{store_id}] FOOD READY! {item_id} x{b['quantity']} | "
-                          f"ready at {sim_now.strftime('%H:%M')} | "
-                          f"expires {b['expires'].strftime('%H:%M')}")
+                    # print(f"[{store_id}] FOOD READY! {item_id} x{b['quantity']} | "
+                    #       f"ready at {sim_now.strftime('%H:%M')} | "
+                    #       f"expires {b['expires'].strftime('%H:%M')}")
             self.in_progress[item_id] = \
                 [b for b in batches if b["ready_at"] > sim_now]
 
@@ -248,21 +248,22 @@ async def simulate_store(config, clock, client):
     print(f"[{store_id}] Starting | Level {level} | {store_hours}")
 
     # Start off with default amounts of food
-    seed_sim_now = clock.now()
-    seed_slot_idx = ((seed_sim_now.weekday() * 96) + (seed_sim_now.hour * 4) +
-                     (seed_sim_now.minute // 15)) % 672
+    if store_hours != "5am-11pm":
+        seed_sim_now = clock.now()
+        seed_slot_idx = ((seed_sim_now.weekday() * 96) + (seed_sim_now.hour * 4) +
+                        (seed_sim_now.minute // 15)) % 672
 
-    for item in menu["items"]:
-        if not item["active"]: continue
-        seed_look_ahead = int(item["hold_time"] * 4)
-        seed_demand = sum(production_targets.get(
-            (store_id, (seed_slot_idx + i) % 672, item["id"]), 0)
-                for i in range(seed_look_ahead))
+        for item in menu["items"]:
+            if not item["active"]: continue
+            seed_look_ahead = int(item["hold_time"] * 4)
+            seed_demand = sum(production_targets.get(
+                (store_id, (seed_slot_idx + i) % 672, item["id"]), 0)
+                    for i in range(seed_look_ahead))
 
-        if seed_demand > 0:
-            expires = seed_sim_now + timedelta(hours=item["hold_time"])
-            state.inventory[item["id"]] = [{"quantity": seed_demand,
-                                            "expires": expires}]
+            if seed_demand > 0:
+                expires = seed_sim_now + timedelta(hours=item["hold_time"])
+                state.inventory[item["id"]] = [{"quantity": seed_demand,
+                                                "expires": expires}]
 
     last_hour = -1
     last_slot_idx = -1

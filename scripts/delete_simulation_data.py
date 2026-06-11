@@ -37,7 +37,7 @@ def delete_snowflake():
     conn = snowflake.connector.connect(
         account=os.getenv("SNOWFLAKE_ACCOUNT"),
         user=os.getenv("SNOWFLAKE_USER"),
-        password=os.getenv("SNOWFLAKE_PASSWORD"),
+        private_key_file="/home/bibba/.ssh/snowflake_rsa.p8",
         database=os.getenv("SNOWFLAKE_DATABASE"),
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
         role=os.getenv("SNOWFLAKE_ROLE"),
@@ -57,7 +57,7 @@ def delete_snowflake():
     cursor.execute("DELETE FROM MARTS.MART_WASTE_PERCENTAGE WHERE waste_date >= %s", (CUTOFF,))
     print(f"Deleted simulation rows from MARTS.MART_WASTE_PERCENTAGE.")
 
-    cursor.execute("DELETE FROM MARTS.STOCKOUT_SUMMARY WHERE stockout_date >= %s", (CUTOFF,))
+    cursor.execute("DELETE FROM MARTS.MART_STOCKOUT_SUMMARY WHERE stockout_date >= %s", (CUTOFF,))
     print(f"Deleted simulation rows from MARTS.STOCKOUT_SUMMARY.")
 
     cursor.close()
@@ -66,5 +66,5 @@ def delete_snowflake():
 
 if __name__ == "__main__":
     print(f"Deleting all rows with created_at >= {CUTOFF}...")
-    delete_neon()
+    # delete_neon()
     delete_snowflake()

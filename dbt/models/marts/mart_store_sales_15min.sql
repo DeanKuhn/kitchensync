@@ -19,7 +19,6 @@ final as (
         r.item_id,
         r.sale_date,
         r.sale_hour,
-        r.sale_minute,
         r.slot_index,
         r.day_of_week,
         r.slot_quantity,
@@ -32,11 +31,11 @@ final as (
         and r.item_id       = p.item_id
         and r.day_of_week   = p.day_of_week
         and r.sale_hour     = p.sale_hour
-        and r.sale_minute   = p.sale_minute
+        and r.slot_index    = p.slot_index
 
     qualify row_number() over (
         partition by r.store_id, r.item_id
-        order by r.sale_date desc, r.sale_hour desc, r.sale_minute desc
+        order by r.sale_date desc, r.sale_hour desc, r.slot_index desc
     ) = 1
 
 )
