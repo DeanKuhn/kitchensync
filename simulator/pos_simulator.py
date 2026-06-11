@@ -413,8 +413,6 @@ async def main():
 
         # One simulator task per store
         for store in stores["stores"]:
-            if store["id"] != "store_012":
-                continue
             tasks.append(asyncio.create_task(simulate_store(store, clock, client)))
 
         print(f"--- SIMULATION STARTED (Scale: {TIME_SCALE}x) ---")
