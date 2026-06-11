@@ -187,34 +187,38 @@ async def fire_stockout(client, store_id, item_id, quantity_requested, sim_now):
 
 # --- BACKGROUND TASKS ---
 async def refresh_targets_task():
-    # Technically a refresh, but since this is a weekly snapshot it is just
-    # loaded in once and left (in real world, would be ran weekly)
 
-    engine = get_snowflake_engine()
-    global production_targets
+    while True:
+        # Technically a refresh, but since this is a weekly snapshot it is just
+        # loaded in once and left (in real world, would be ran weekly)
 
-    try:
-        print("[SIMULATOR] Loading 15-min production targets from Snowflake...")
-        query = text("""
-            SELECT store_id, slot_index, item_id, predicted_units
-            FROM MARTS.PREDICTIONS
-        """)
+        engine = get_snowflake_engine()
+        global production_targets
 
-        loop = asyncio.get_event_loop()
-        df = await loop.run_in_executor(
-            None, lambda: pd.read_sql(query, engine))
-        df.columns = df.columns.str.lower()
+        try:
+            print("[SIMULATOR] Loading 15-min production targets from Snowflake...")
+            query = text("""
+                SELECT store_id, slot_index, item_id, predicted_units
+                FROM MARTS.PREDICTIONS
+            """)
 
-        new_targets = {}
-        for _, row in df.iterrows():
-            # Key: (store_id, slot_index, item_id)
-            key = (row['store_id'], int(row['slot_index']), row['item_id'])
-            new_targets[key] = float(row['predicted_units'])
+            loop = asyncio.get_event_loop()
+            df = await loop.run_in_executor(
+                None, lambda: pd.read_sql(query, engine))
+            df.columns = df.columns.str.lower()
 
-        production_targets = new_targets
-        print(f"[SIMULATOR] Loaded {len(production_targets)} prescriptive targets.")
-    except Exception as e:
-        print(f"[TARGETS ERROR] {e}")
+            new_targets = {}
+            for _, row in df.iterrows():
+                # Key: (store_id, slot_index, item_id)
+                key = (row['store_id'], int(row['slot_index']), row['item_id'])
+                new_targets[key] = float(row['predicted_units'])
+
+            production_targets = new_targets
+            print(f"[SIMULATOR] Loaded {len(production_targets)} prescriptive targets.")
+        except Exception as e:
+            print(f"[TARGETS ERROR] {e}")
+
+        await asyncio.sleep(86400)
 
 
 # --- SIMULATION FUNCTION ---
