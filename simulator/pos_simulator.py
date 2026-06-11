@@ -217,26 +217,6 @@ async def refresh_targets_task():
         print(f"[TARGETS ERROR] {e}")
 
 
-async def refresh_pipeline_task():
-    # Background task that extracts current sales/waste/stockout data to
-    # Snowflake, allowing the Streamlit dashboard to see updated data in
-    # real time
-
-    while True:
-        await asyncio.sleep(300)
-        print("[PIPELINE] Running extract & dbt...")
-        loop = asyncio.get_event_loop()
-        def run_pipeline():
-            subprocess.run(
-                ["uv", "run", "python", "-m", "scripts.extract_to_snowflake"])
-            subprocess.run(
-                ["uv", "run", "dbt", "run", "--project-dir", "dbt"])
-
-        await loop.run_in_executor(None, run_pipeline)
-
-        print("[PIPELINE] Done.")
-
-
 # --- SIMULATION FUNCTION ---
 async def simulate_store(config, clock, client):
 
@@ -407,9 +387,7 @@ async def main():
         while not production_targets:
             await asyncio.sleep(1)
 
-        pipeline_task = asyncio.create_task(refresh_pipeline_task())
-
-        tasks = [targets_task, pipeline_task]
+        tasks = [targets_task]
 
         # One simulator task per store
         for store in stores["stores"]:
