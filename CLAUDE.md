@@ -8,24 +8,28 @@ This file is the authoritative reference for Claude Code. Read it in full before
 
 A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). The system ingests real-time simulated POS (point-of-sale) events, stores them in a Postgres-backed transactional database, transforms them through a dbt pipeline into a Snowflake analytics warehouse, and feeds a LightGBM forecasting model that produces per-store, per-item production plans at 15-minute slot grain. A Streamlit dashboard surfaces results for kitchen staff, split into Kitchen and Chicken production queues.
 
-This project exists to demonstrate: robust data pipeline engineering, scalable multi-store architecture, modern analytics stack (dbt + Snowflake), and ML model accuracy with real-time adaptation.
+An A/B comparison pipeline runs nightly on AWS EC2, comparing the ML system against a naive hourly-average baseline. Results are written to `data/ab_results.json`, committed to GitHub, and consumed by a static Astro portfolio site that updates automatically each morning.
+
+This project exists to demonstrate: robust data pipeline engineering, scalable multi-store architecture, modern analytics stack (dbt + Snowflake), ML model accuracy with real-time adaptation, and automated cloud deployment.
 
 ---
 
 ## Architecture Overview
 
 ```
-[POS Simulator] ──POST /sales, /waste, /stockout──> [FastAPI Ingest API]
+[POS Simulator — EC2 systemd] ──POST /sales, /waste, /stockout──> [FastAPI Ingest API — EC2 systemd]
                                                               │
                                                               ▼
                                                      [Neon (Postgres)]
                                                      Per-store schemas
                                                               │
-                                                    [extract_to_snowflake.py]
+                                              [Nightly cron — 2am UTC]
+                                              extract_to_snowflake.py
                                                               │
                                                               ▼
                                                [Snowflake — KS_DB.RAW]
                                          RAW.SALES_EVENTS + RAW.WASTE_LOG
+                                                    + RAW.STOCKOUT_EVENTS
                                                               │
                                                      [dbt Core pipeline]
                                                               │
@@ -34,6 +38,7 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
                                     KS_DB.STAGING                      KS_DB.INTERMEDIATE
                                   stg_sales_events              int_sales__rolling_features_15min
                                    stg_waste_log               int_sales__time_of_day_profile
+                                 stg_stockout_events
                                                                                   │
                                                                                   ▼
                                                                           KS_DB.MARTS
@@ -41,6 +46,7 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
                                                                      mart_cold_start_profile
                                                                       mart_waste_percentage
                                                                       mart_stockout_summary
+                                                                     mart_ml_training_features
                                                                                   │
                                                                          [ML Pipeline]
                                                                     ml/train.py (LightGBM)
@@ -48,10 +54,19 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
                                                               (190,773 predictions: 12 stores
                                                                × 42 items × 672 slots)
                                                                                   │
-                                                                      [Streamlit Dashboard]
-                                                         Split Kitchen / Chicken production queues
-                                                         Current 15-min slot | 5-min auto-refresh
-                                                              Missed Demand + Waste Summary
+                                                       ┌──────────────────────────┴──────────────────────────┐
+                                                       ▼                                                     ▼
+                                           [Streamlit Dashboard]                          [A/B Comparison — run_daily_simulation.py]
+                                  Split Kitchen / Chicken production queues                ML (15-min grain) vs Baseline (hourly avg)
+                                  Current 15-min slot | 5-min auto-refresh                     In-memory, seeded by date
+                                       Missed Demand + Waste Summary                                        │
+                                                                                                            ▼
+                                                                                               data/ab_results.json
+                                                                                                            │
+                                                                                           git commit + push (GitHub Actions)
+                                                                                                            │
+                                                                                               [Astro Portfolio Site]
+                                                                                          Daily ML vs Baseline metrics display
 ```
 
 ---
@@ -69,10 +84,14 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 | ML — Baseline | scikit-learn (RandomForest) |
 | ML — Production | LightGBM |
 | Dashboard | Streamlit + streamlit-autorefresh |
-| Data formats | CSV (seed data) |
+| A/B Comparison | Pure Python in-memory simulation |
+| Portfolio Site | Static Astro site, fed by ab_results.json |
+| Cloud Hosting | AWS EC2 (systemd services + cron) |
+| Data formats | CSV (seed data), JSON (A/B results) |
 | Config | YAML (menu config, store config) |
 | Package Management | uv |
 | Dev environment | WSL, VS Code, Claude Code |
+| Auth | Snowflake RSA key pair (~/.ssh/snowflake_rsa.p8) |
 
 ---
 
@@ -168,13 +187,17 @@ kitchensync/
 - All 12 store schemas in Neon with `sales_events`, `waste_log`, `stockout_events` tables
 - FastAPI ingest API with three endpoints: `/sales`, `/waste`, `/stockout`
 - Historical data generator — 42 days (Jan 1 – Feb 11, 2026), Poisson-based, sale-day aware
-- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding
-- Snowflake: `KS_DB`, `KS_WH`, `RAW.SALES_EVENTS`, `RAW.WASTE_LOG`
+- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding, 24-hour prediction reload
+- Snowflake: `KS_DB`, `KS_WH`, `RAW.SALES_EVENTS`, `RAW.WASTE_LOG`, `RAW.STOCKOUT_EVENTS`
 - Full dbt pipeline: staging → intermediate → marts (all models live, 15-min slot grain)
 - LightGBM model trained, 190,773 predictions (12 stores × 42 items × 672 slots) written to `MARTS.PREDICTIONS`
 - Cold-start fallback via `mart_cold_start_profile` (category-level averages by slot_index, threshold = 4 samples)
 - Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot, missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table
-- Pipeline scripts split: `run_prediction_update.py` (extract + dbt only, runs during simulation), `run_training.py` (full pipeline including train, run manually)
+- A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results.json`
+- AWS EC2 deployment: API + simulator as systemd services (auto-restart on crash/reboot)
+- Nightly cron pipeline: extract → dbt → retrain → predict → A/B comparison → git push
+- Portfolio site integration: `ab_results.json` committed to GitHub nightly, consumed by Astro static site
+- Snowflake auth: RSA key pair (`~/.ssh/snowflake_rsa.p8`), registered via `ALTER USER`
 
 ---
 
@@ -459,10 +482,17 @@ NUM_STORES=12
 
 ### Phase 5 — Polish 🔄
 - [x] CLAUDE.md updated
-- [ ] README updated
+- [x] README updated
 - [ ] Dockerfile documented
 - [ ] Weather feature (stretch)
-- [ ] Auto-retraining pipeline (stretch)
+
+### Phase 6 — A/B Comparison + AWS Deployment ✅
+- [x] `run_daily_simulation.py` — in-memory ML vs baseline comparison
+- [x] `data/ab_results.json` — daily + cumulative metrics output
+- [x] AWS EC2 — API + simulator as systemd services
+- [x] Nightly cron pipeline — extract → dbt → retrain → predict → A/B → git push
+- [x] Portfolio site integration — Astro site reads ab_results.json from GitHub
+- [x] Snowflake RSA key pair auth
 
 ---
 
@@ -479,4 +509,6 @@ NUM_STORES=12
 9. **Config-file-driven menu** — items toggled without code changes; cold-start logic handles new items
 10. **Slot-boundary production logic** — cook decisions fire once per 15-min boundary, not every tick; look-ahead window = `hold_time * 4` slots
 11. **RUSH_CURVE-scaled batch sizes** — minimum cook quantity scales with hourly traffic to prevent over-production during dead hours and under-production during rush
-12. **No retraining during simulation** — `refresh_pipeline_task` runs extract + dbt only; predictions are a static weekly profile loaded once at startup
+12. **Nightly retraining loop** — simulator runs 24/7 generating events; cron retrains nightly; simulator reloads predictions every 24 hours; A/B comparison always reads fresh predictions
+13. **A/B baseline never writes to Neon** — baseline system is purely in-memory metrics; only ML system generates training data; prevents baseline behavior from corrupting the model's learning signal
+14. **Honest A/B finding** — ML reduces stockouts ~31% vs baseline but increases waste ~5.5%; root cause is 4x more production checks + minimum batch size; a production system would need a cost function to balance the trade-off
