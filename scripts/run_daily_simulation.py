@@ -199,9 +199,12 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                             state.get_in_progress_quantity(item["id"]))
                 gap = demand - committed
 
-                cook_qty = int(np.ceil(max(
-                    item["batch"] * RUSH_CURVE[hour], gap))
-                    ) if gap > 1 else 0
+                batch_floor = item["batch"] * RUSH_CURVE[hour]
+                if gap > 1:
+                    cook_qty = (int(np.ceil(max(batch_floor, gap)))
+                                if gap >= item["batch"] else int(np.ceil(gap)))
+                else:
+                    cook_qty = 0
 
                 if cook_qty > 0:
                     ready_at = sim_now + timedelta(minutes=item["cook_time"])

@@ -31,6 +31,7 @@ final as (
         and r.item_id       = p.item_id
         and r.day_of_week   = p.day_of_week
         and r.sale_hour     = p.sale_hour
+        and r.slot_index    = p.slot_index
 
 )
 
