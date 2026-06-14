@@ -230,3 +230,8 @@ Traceback (most recent call last):
     with open(path, "w") as f:
          ^^^^^^^^^^^^^^^
 FileNotFoundError: [Errno 2] No such file or directory: 'data/ab_results.json'
+/bin/sh: 1: uv: not found
+[PIPELINE] Starting at 2026-06-14 02:00:03
+
+[PIPELINE] Extract Neon → Snowflake RAW...
+[PIPELINE ERROR] Extract Neon → Snowflake RAW failed (exit 127). Aborting.
