@@ -28,26 +28,46 @@ fifteen_min as (
 
 ),
 
+-- Total observed days per store/day_of_week — used as denominator so that
+-- zero-sale slots are included in the average (not just days with actual sales).
+total_days as (
+
+    select
+        store_id,
+        day_of_week,
+        count(distinct sale_date) as total_dates
+
+    from sales
+
+    group by
+        store_id,
+        day_of_week
+
+),
 
 profile as (
 
     select
-        store_id,
-        item_id,
-        day_of_week,
-        sale_hour,
-        slot_index,
-        avg(quantity) as avg_slot_quantity,
-        count(*) as sample_size
+        f.store_id,
+        f.item_id,
+        f.day_of_week,
+        f.sale_hour,
+        f.slot_index,
+        sum(f.quantity) / t.total_dates  as avg_slot_quantity,
+        count(*)                          as sample_size
 
-    from fifteen_min
+    from fifteen_min f
+    join total_days t
+        on  f.store_id    = t.store_id
+        and f.day_of_week = t.day_of_week
 
     group by
-        store_id,
-        item_id,
-        sale_hour,
-        slot_index,
-        day_of_week
+        f.store_id,
+        f.item_id,
+        f.sale_hour,
+        f.slot_index,
+        f.day_of_week,
+        t.total_dates
 
 )
 
