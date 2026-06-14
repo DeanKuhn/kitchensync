@@ -120,6 +120,8 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
         "units_sold": 0,
         "sales_revenue": 0.0
     }
+    waste_by_item = {}
+    cooked_by_item = {}
 
     menu_lookup = {item["id"]: item for item in menu["items"]}
 
@@ -205,6 +207,7 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                     ready_at = sim_now + timedelta(minutes=item["cook_time"])
                     expires = ready_at + timedelta(hours=item["hold_time"])
                     state.start_cooking(item["id"], cook_qty, ready_at, expires)
+                    cooked_by_item[item["id"]] = cooked_by_item.get(item["id"], 0) + cook_qty
 
         # --- POISSON/SALES LOGIC ---
         random_offset = random.choices(RANDOMNESS[level]["values"],
@@ -252,6 +255,24 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
             for b in expired_batches:
                 metrics["units_wasted"] += b["quantity"]
                 metrics["waste_cost"] += b["quantity"] * menu_lookup[item_id]["cost"]
+                waste_by_item[item_id] = waste_by_item.get(item_id, 0) + b["quantity"]
+
+    # --- DEBUG BREAKDOWN ---
+    waste_by_tod = {}
+    cooked_by_tod = {}
+    for item_id, qty in waste_by_item.items():
+        tod = menu_lookup[item_id]["time_of_day"]
+        waste_by_tod[tod] = waste_by_tod.get(tod, 0) + qty
+    for item_id, qty in cooked_by_item.items():
+        tod = menu_lookup[item_id]["time_of_day"]
+        cooked_by_tod[tod] = cooked_by_tod.get(tod, 0) + qty
+
+    print(f"\n[DEBUG][{mode.upper()}][{store_id}] sold={metrics['units_sold']} "
+          f"wasted={metrics['units_wasted']} cooked={sum(cooked_by_item.values())}")
+    print(f"  Waste by time_of_day: {waste_by_tod}")
+    print(f"  Cooked by time_of_day: {cooked_by_tod}")
+    top_wasted = sorted(waste_by_item.items(), key=lambda x: x[1], reverse=True)[:5]
+    print(f"  Top 5 wasted items: {top_wasted}")
 
     return metrics
 

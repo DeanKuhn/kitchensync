@@ -14,7 +14,7 @@ cleaned as (
         created_at::timestamp               as created_at,
         created_at::date                    as waste_date,
         extract(hour from created_at)       as waste_hour,
-        extract(dayofweek from created_at)   as day_of_week
+        extract(dayofweek from created_at)  as day_of_week
 
     from source
 
