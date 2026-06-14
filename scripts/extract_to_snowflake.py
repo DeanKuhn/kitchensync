@@ -118,7 +118,7 @@ def extract(sf_conn, sf_cursor, neon_table, sf_table, columns):
             )
 
             if success:
-                print(f"[{store_id}] Loaded {rows_loaded} rows into Snowflake.")
+                print(f"[{store_id}] Loaded {rows_loaded} rows into Snowflake from {neon_table}.")
             else:
                 print(f"[{store_id}] Load failed: {output}")
         else:

@@ -171,7 +171,7 @@ if __name__ == "__main__":
     # Add timestamp, and make sure to append so previous predictions can be
     # observed and learned from
     production_plan['predicted_at'] = pd.Timestamp.now()
-    production_plan.to_sql('predictions', engine, if_exists='replace', index=False)
+    production_plan.to_sql('predictions', engine, if_exists='replace', index=False, chunksize=10000)
 
     print("\n--- PRODUCTION PLAN SUMMARY ---")
     print(f"Total predictions written : {len(production_plan)}")
