@@ -32,7 +32,7 @@ spine as (
         i.item_id,
         sl.slot_within_day,
         dayofweekiso(sd.sale_date) - 1                                as day_of_week,
-        sl.slot_within_day // 4                                        as sale_hour,
+        FLOOR(sl.slot_within_day / 4)                                  as sale_hour,
         (sl.slot_within_day % 4) * 15                                  as sale_minute,
         ((dayofweekiso(sd.sale_date) - 1) * 96) + sl.slot_within_day  as slot_index
 
