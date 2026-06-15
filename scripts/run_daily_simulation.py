@@ -74,27 +74,24 @@ def load_baseline_predictions():
     engine = get_snowflake_engine()
 
     try:
-        print("[SIMULATOR] Loading hourly baseline production targets from Snowflake...")
+        print("[SIMULATOR] Loading slot-level baseline production targets from Snowflake...")
         query = text("""
-            SELECT store_id, item_id, day_of_week, sale_hour,
-                SUM(avg_slot_quantity) as hourly_quantity
+            SELECT store_id, item_id, slot_index, avg_slot_quantity
             FROM INTERMEDIATE.INT_SALES__TIME_OF_DAY_PROFILE
-            GROUP BY store_id, item_id, day_of_week, sale_hour
         """)
 
         df = pd.read_sql(query, engine)
         df.columns = df.columns.str.lower()
 
-        # Return dict keyed by (store_id, day_of_week, sale_hour, item_id)
+        # Return dict keyed by (store_id, slot_index, item_id)
         base_production_targets = {}
         for _, row in df.iterrows():
             key = (
                 row['store_id'],
-                int(row['day_of_week']),
-                int(row['sale_hour']),
+                int(row['slot_index']),
                 row['item_id']
             )
-            base_production_targets[key] = float(row['hourly_quantity'])
+            base_production_targets[key] = float(row['avg_slot_quantity'])
 
         print(f"[SIMULATOR] Loaded {len(base_production_targets)} "
                "prescriptive targets for baseline model.")
@@ -138,18 +135,15 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                     ):
                 continue
 
-            if mode == "ml":
-                global_slot = day_of_week * 96
-                look_ahead = int(item["hold_time"] * 4)
-                demand = int(round(sum(predictions.get(
-                    (store_id, (global_slot + i) % 672, item["id"]), 0)
-                    for i in range(look_ahead))))
-
-            else:
-                look_ahead = int(item["hold_time"])
-                demand = int(round(sum(predictions.get(
-                    (store_id, day_of_week, i % 24, item["id"]), 0)
-                    for i in range(look_ahead))))
+            global_slot = day_of_week * 96
+            look_ahead = int(item["hold_time"] * 4)
+            demand = int(round(sum(predictions.get(
+                (store_id, (global_slot + i) % 672, item["id"]), 0)
+                for i in range(look_ahead))))
+                # look_ahead = int(item["hold_time"])
+                # demand = int(round(sum(predictions.get(
+                #     (store_id, day_of_week, i % 24, item["id"]), 0)
+                #     for i in range(look_ahead))))
 
             if demand > 0:
                 expires = seed_datetime + timedelta(hours=item["hold_time"])
@@ -170,7 +164,10 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
         state.promote_ready_batches(sim_now, store_id)
 
         # --- PRODUCTION LOGIC ---
-        fires = (mode == "ml") or (mode == "baseline" and slot_idx % 4 == 0)
+        is_rush = RUSH_CURVE[hour] >= 0.6
+        fires = is_rush or slot_idx % 4 == 0
+        # fires = (mode == "baseline" and slot_idx % 4 == 0) or \
+        #         (mode == "ml" and (is_rush or slot_idx % 4 == 0))
 
         if fires:
             for item in menu["items"]:
@@ -189,11 +186,16 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                         for i in range(look_ahead))
 
                 else:
-                    look_ahead = int(item["hold_time"])
+                    look_ahead = int(item["hold_time"] * 4)
                     demand = sum(predictions.get(
-                        (store_id, (day_of_week + (hour + i) // 24) % 7,
-                         (hour + i) % 24, item["id"]), 0)
+                        (store_id, (global_slot + i) % 672, item["id"]), 0)
                         for i in range(look_ahead))
+
+                    # look_ahead = int(item["hold_time"])
+                    # demand = sum(predictions.get(
+                    #     (store_id, (day_of_week + (hour + i) // 24) % 7,
+                    #      (hour + i) % 24, item["id"]), 0)
+                    #     for i in range(look_ahead))
 
                 committed = (state.get_total_quantity(item["id"]) +
                             state.get_in_progress_quantity(item["id"]))
@@ -256,21 +258,21 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                 waste_by_item[item_id] = waste_by_item.get(item_id, 0) + b["quantity"]
 
     # --- DEBUG BREAKDOWN ---
-    waste_by_tod = {}
-    cooked_by_tod = {}
-    for item_id, qty in waste_by_item.items():
-        tod = menu_lookup[item_id]["time_of_day"]
-        waste_by_tod[tod] = waste_by_tod.get(tod, 0) + qty
-    for item_id, qty in cooked_by_item.items():
-        tod = menu_lookup[item_id]["time_of_day"]
-        cooked_by_tod[tod] = cooked_by_tod.get(tod, 0) + qty
+    # waste_by_tod = {}
+    # cooked_by_tod = {}
+    # for item_id, qty in waste_by_item.items():
+    #     tod = menu_lookup[item_id]["time_of_day"]
+    #     waste_by_tod[tod] = waste_by_tod.get(tod, 0) + qty
+    # for item_id, qty in cooked_by_item.items():
+    #     tod = menu_lookup[item_id]["time_of_day"]
+    #     cooked_by_tod[tod] = cooked_by_tod.get(tod, 0) + qty
 
-    print(f"\n[DEBUG][{mode.upper()}][{store_id}] sold={metrics['units_sold']} "
-          f"wasted={metrics['units_wasted']} cooked={sum(cooked_by_item.values())}")
-    print(f"  Waste by time_of_day: {waste_by_tod}")
-    print(f"  Cooked by time_of_day: {cooked_by_tod}")
-    top_wasted = sorted(waste_by_item.items(), key=lambda x: x[1], reverse=True)[:5]
-    print(f"  Top 5 wasted items: {top_wasted}")
+    # print(f"\n[DEBUG][{mode.upper()}][{store_id}] sold={metrics['units_sold']} "
+    #       f"wasted={metrics['units_wasted']} cooked={sum(cooked_by_item.values())}")
+    # print(f"  Waste by time_of_day: {waste_by_tod}")
+    # print(f"  Cooked by time_of_day: {cooked_by_tod}")
+    # top_wasted = sorted(waste_by_item.items(), key=lambda x: x[1], reverse=True)[:5]
+    # print(f"  Top 5 wasted items: {top_wasted}")
 
     return metrics
 
@@ -344,7 +346,8 @@ def main():
     baseline_predictions = load_baseline_predictions()
 
     # Set seed_date
-    seed_date = datetime.now()
+    # seed_date = datetime.now()
+    seed_date = datetime(2026, 6, 17)
 
     # Call simulate_day twice, storing results
     ml_totals = simulate_day(ml_predictions, seed_date, mode="ml")

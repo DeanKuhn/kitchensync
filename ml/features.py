@@ -16,6 +16,7 @@ FEATURE_COLS = [
     'store_id',
     'item_id',
     'sale_hour',
+    'sale_minute',
     'slot_index',
     'day_of_week',
     'is_weekend',
@@ -53,6 +54,7 @@ def load_features():
             item_id,
             sale_date,
             sale_hour,
+            sale_minute,
             slot_index,
             slot_quantity,
             day_of_week,
@@ -60,7 +62,6 @@ def load_features():
             sample_size
 
         from MARTS.MART_ML_TRAINING_FEATURES
-        where sample_size >= 4
     """
 
     df = pd.read_sql(query, engine)

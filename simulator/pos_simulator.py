@@ -30,10 +30,10 @@ TICK_INTERVAL = 1
 START_TIME = datetime.now()
 
 RUSH_CURVE = {
-    0: 0.1,  1: 0.05, 2: 0.05, 3: 0.05, 4: 0.1,  5: 0.2,
-    6: 0.6,  7: 0.9,  8: 0.9,  9: 0.7,  10: 0.6, 11: 0.8,
-    12: 1,   13: 0.8, 14: 0.6, 15: 0.5, 16: 0.8, 17: 0.9,
-    18: 0.7, 19: 0.5, 20: 0.3, 21: 0.2, 22: 0.1, 23: 0.1
+    0: 0.05, 1: 0.02, 2: 0.02, 3: 0.02, 4: 0.05, 5: 0.15,
+    6: 0.50, 7: 0.85, 8: 0.95, 9: 0.75, 10: 0.40, 11: 0.65,
+    12: 1.0, 13: 0.85, 14: 0.35, 15: 0.30, 16: 0.60, 17: 0.90,
+    18: 0.80, 19: 0.60, 20: 0.35, 21: 0.20, 22: 0.10, 23: 0.07
 }
 
 BASE_VOLUME = {1: 80, 2: 140, 3: 220, 4: 400}
@@ -332,7 +332,8 @@ async def simulate_store(config, clock, client):
                         hour_stockouts += qty_to_sell
 
         # --- 2. PRODUCTION LOGIC (Sliding Window Replenishment) ---
-        if slot_idx != last_slot_idx:
+        is_rush = RUSH_CURVE[hour] >= 0.6
+        if slot_idx != last_slot_idx and (is_rush or slot_idx % 4 == 0):
             last_slot_idx = slot_idx
             for item in menu["items"]:
                 if (not item["active"] and item["added"] <= sim_now.date()

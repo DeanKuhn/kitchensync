@@ -52,6 +52,7 @@ def get_slot_features():
             p.item_id,
             p.day_of_week,
             p.sale_hour,
+            (p.slot_index % 4) * 15 as sale_minute,
             p.slot_index,
             p.avg_slot_quantity,
             p.sample_size,
