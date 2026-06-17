@@ -3,4 +3,5 @@ __pycache__/
 .env
 .vscode/
 data/
+!data/ab_results.json
 ml/models/
