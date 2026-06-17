@@ -1,5 +1,4 @@
 import asyncio
-import subprocess
 import httpx
 import yaml # type:ignore
 import random
@@ -27,7 +26,6 @@ for item in menu["items"]:
 TIME_SCALE = 20
 API_BASE_URL = "http://localhost:8000"
 TICK_INTERVAL = 1
-START_TIME = datetime.now()
 
 RUSH_CURVE = {
     0: 0.05, 1: 0.02, 2: 0.02, 3: 0.02, 4: 0.05, 5: 0.15,
@@ -56,6 +54,27 @@ HOURS_AVAILABLE = {
 WEEKDAY_MULTIPLIER = {
     0: 0.9, 1: 1.0, 2: 1.0, 3: 1.2, 4: 1.2, 5: 0.8, 6: 0.7
 }
+
+
+def get_start_time():
+
+    fallback = datetime(2026, 2, 12, 0, 0, 0)
+    try:
+        engine = get_snowflake_engine()
+        result = pd.read_sql(
+            text("SELECT MAX(created_at) FROM RAW.SALES_EVENTS"), engine)
+        value = result.iloc[0, 0]
+        if value is None:
+            print("[SIMULATOR] Snowflake empty, using fallback start time.")
+            return fallback
+        start = pd.Timestamp(value).to_pydatetime()
+        print(f"[SIMULATOR] Resuming simulation from {start}")
+        return start
+
+    except Exception as e:
+        print(f"[SIMULATOR] Failed to fetch start time ({e}), using fallback.")
+        return fallback
+
 
 # Global state for prescriptive targets:
 # (store_id, slot_index, item_id) -> target_qty
@@ -380,6 +399,7 @@ async def simulate_store(config, clock, client):
 
 
 async def main():
+    START_TIME = get_start_time()
     clock = SimClock(START_TIME, TIME_SCALE)
     async with httpx.AsyncClient(limits=httpx.Limits(max_connections=100)) as client:
         # Initial wait to let the targets load
