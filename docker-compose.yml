@@ -1,0 +1,47 @@
+# KitchenSync — Full Stack (API + Simulator + Dashboard)
+#
+# All three services share the same image build.
+# Environment variables are loaded from .env (see .env.example).
+#
+# Snowflake RSA key: mount your local private key into each service that
+# needs it (simulator reads predictions; dashboard reads from Snowflake).
+# Update the source path below to match your local key location.
+#
+# ML pipeline (extract → dbt → predict → A/B) is not included here —
+# it runs as a nightly cron job on EC2.
+#
+# Usage:
+#   docker compose up --build
+#   docker compose up api          # API only
+#   docker compose logs -f simulator
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ~/.ssh/snowflake_rsa.p8:/root/.ssh/snowflake_rsa.p8:ro
+
+  simulator:
+    build: .
+    command: uv run python -m simulator.pos_simulator
+    env_file: .env
+    environment:
+      - PYTHONPATH=.
+    volumes:
+      - ~/.ssh/snowflake_rsa.p8:/root/.ssh/snowflake_rsa.p8:ro
+    depends_on:
+      - api
+
+  dashboard:
+    build: .
+    command: uv run streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      - PYTHONPATH=.
+    volumes:
+      - ~/.ssh/snowflake_rsa.p8:/root/.ssh/snowflake_rsa.p8:ro

@@ -81,7 +81,7 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 | Transactional DB | Neon (cloud Postgres) — per-store schemas |
 | Analytics Warehouse | Snowflake |
 | Transformation | dbt Core |
-| ML — Baseline | scikit-learn (RandomForest) |
+| ML — Baseline | Hourly average (in-memory, no model) |
 | ML — Production | LightGBM |
 | Dashboard | Streamlit + streamlit-autorefresh |
 | A/B Comparison | Pure Python in-memory simulation |
@@ -101,7 +101,8 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 kitchensync/
 ├── CLAUDE.md
 ├── README.md
-├── Dockerfile                 # Reference only
+├── Dockerfile                 # FastAPI ingest service image (production uses EC2 + systemd)
+├── docker-compose.yml         # Full stack: API + simulator + dashboard
 ├── .env.example
 ├── pyproject.toml             # uv project config (name, version, requires-python)
 │
@@ -110,6 +111,7 @@ kitchensync/
 │   └── stores.yaml            # 12 stores across 4 regions with traffic levels
 │
 ├── data/
+│   ├── ab_results.json        # Nightly A/B output — tracked in git, consumed by Astro site
 │   ├── seeds/
 │   └── exports/
 │
@@ -169,6 +171,7 @@ kitchensync/
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema + table creation
 │   ├── extract_to_snowflake.py # Full reload: Neon → KS_DB.RAW
+│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push
 │   ├── run_prediction_update.py # extract → dbt → predict (no train; runs every 5 min in simulator)
 │   ├── run_training.py        # Full pipeline including train step (run manually before simulation)
 │   └── delete_simulation_data.py # Wipes live simulation data from Neon for a clean restart
@@ -195,7 +198,7 @@ kitchensync/
 - Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot, missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table
 - A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results.json`
 - AWS EC2 deployment: API + simulator as systemd services (auto-restart on crash/reboot)
-- Nightly cron pipeline: extract → dbt → retrain → predict → A/B comparison → git push
+- Nightly cron pipeline: extract → dbt → predict → A/B comparison → git push (retraining is run manually)
 - Portfolio site integration: `ab_results.json` committed to GitHub nightly, consumed by Astro static site
 - Snowflake auth: RSA key pair (`~/.ssh/snowflake_rsa.p8`), registered via `ALTER USER`
 
@@ -340,7 +343,7 @@ Reads all slots from `INT_SALES__TIME_OF_DAY_PROFILE`, runs warm (LightGBM) or c
 ### Key Parameters
 - `TIME_SCALE = 20` — 1 real second = 20 simulated seconds
 - `TICK_INTERVAL = 1` — real seconds per tick
-- `START_TIME = datetime(2026, 2, 12, 0, 0, 0)` — simulation start (day after historical data ends)
+- `START_TIME` — determined at startup by `get_start_time()`: queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` in Snowflake and resumes from that timestamp; falls back to `datetime(2026, 2, 12, 0, 0, 0)` if Snowflake is empty
 
 ### Production Logic
 - Fires once per 15-min slot boundary (`slot_idx != last_slot_idx`)
@@ -431,6 +434,7 @@ SNOWFLAKE_PASSWORD=
 SNOWFLAKE_DATABASE=KS_DB
 SNOWFLAKE_WAREHOUSE=KS_WH
 SNOWFLAKE_ROLE=
+SNOWFLAKE_PRIVATE_KEY_PATH=~/.ssh/snowflake_rsa.p8  # defaults to this if not set
 
 # API
 API_HOST=0.0.0.0
@@ -480,17 +484,17 @@ NUM_STORES=12
 - [x] 5-minute auto-refresh (`streamlit-autorefresh`)
 - [x] Session state persistence for "Mark Complete" checkboxes
 
-### Phase 5 — Polish 🔄
+### Phase 5 — Polish ✅
 - [x] CLAUDE.md updated
 - [x] README updated
-- [ ] Dockerfile documented
+- [x] Dockerfile documented + docker-compose.yml added
 - [ ] Weather feature (stretch)
 
 ### Phase 6 — A/B Comparison + AWS Deployment ✅
 - [x] `run_daily_simulation.py` — in-memory ML vs baseline comparison
 - [x] `data/ab_results.json` — daily + cumulative metrics output
 - [x] AWS EC2 — API + simulator as systemd services
-- [x] Nightly cron pipeline — extract → dbt → retrain → predict → A/B → git push
+- [x] Nightly cron pipeline — extract → dbt → predict → A/B → git push
 - [x] Portfolio site integration — Astro site reads ab_results.json from GitHub
 - [x] Snowflake RSA key pair auth
 
@@ -509,8 +513,9 @@ NUM_STORES=12
 9. **Config-file-driven menu** — items toggled without code changes; cold-start logic handles new items
 10. **Slot-boundary production logic** — cook decisions fire once per 15-min boundary, not every tick; look-ahead window = `hold_time * 4` slots
 11. **RUSH_CURVE-scaled batch sizes** — minimum cook quantity scales with hourly traffic to prevent over-production during dead hours and under-production during rush
-12. **Nightly retraining loop** — simulator runs 24/7 generating events; cron retrains nightly; simulator reloads predictions every 24 hours; A/B comparison always reads fresh predictions
+12. **Retraining is manual** — cron runs extract → dbt → predict → A/B nightly but does not retrain the model. Retraining is triggered manually after significant data accumulation. The model is committed to git (`ml/models/lgbm.joblib`) so EC2 can pull a new model without running training on the t3.micro (which OOMs)
 13. **A/B baseline never writes to Neon** — baseline system is purely in-memory metrics; only ML system generates training data; prevents baseline behavior from corrupting the model's learning signal
-14. **Honest A/B finding** — ML improves service level ~5 percentage points (93% vs 88%) but increases waste ~18 percentage points (27% vs 8%); root cause is 4x more production checks hitting the minimum batch floor more often; a production system would need a cost function to balance the trade-off
+14. **Honest A/B finding** — ML achieves +1.6pp better service level (97.6% vs 96.1%) and ~40% fewer stockout events, at the cost of +3.3pp more waste (8.6% vs 5.3%); root cause is 4x more production checks hitting the minimum batch floor more often; a production system would need a cost function to balance the trade-off
 15. **Conditional mean bias fix (2026-06-13)** — `int_sales__time_of_day_profile` originally averaged only over days with non-zero sales, making `avg_slot_quantity` a conditional mean (E[X|X>0]) instead of the true expected demand. For low-traffic stores this inflated predictions 3–4x. Fixed by computing `SUM(quantity) / total_dates` where `total_dates` counts all observed days for that store/day_of_week, including zero-sale days.
-16. **Simulator restart data gap** — `START_TIME = datetime.now()` means a systemd restart re-generates events with already-seen timestamps. Snowflake's watermark-based extract correctly blocks these duplicates, but it also means no new live data flows into Snowflake after a restart. Training effectively runs on the original 42 days of historical data plus whatever accumulated before the first restart. Acceptable for a portfolio project.
+16. **Simulator restart resume** — `get_start_time()` queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` at startup and uses that as `START_TIME`, so the simulation clock resumes from the last extracted timestamp rather than re-generating already-seen events. Falls back to `datetime(2026, 2, 12, 0, 0, 0)` if Snowflake is empty. A small gap of un-extracted Neon events may be re-simulated after a restart, but the watermark on the extract blocks true duplicates from entering Snowflake.
+17. **Snowflake RSA key path via env var** — `SNOWFLAKE_PRIVATE_KEY_PATH` defaults to `~/.ssh/snowflake_rsa.p8` if not set. Avoids hardcoding the EC2-specific absolute path and makes the Docker setup portable. Used in `ml/features.py` (SQLAlchemy engine) and `scripts/extract_to_snowflake.py` (connector).

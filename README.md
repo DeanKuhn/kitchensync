@@ -86,7 +86,7 @@ Built by someone who works with the real system daily.
 | Transactional DB | Neon (cloud Postgres) — per-store schemas |
 | Analytics Warehouse | Snowflake |
 | Transformations | dbt Core |
-| ML — Baseline | scikit-learn (RandomForest) |
+| ML — Baseline | Hourly average (in-memory, no model) |
 | ML — Production | LightGBM |
 | Dashboard | Streamlit + streamlit-autorefresh |
 | A/B Comparison | Pure Python in-memory simulation |
@@ -104,6 +104,8 @@ Built by someone who works with the real system daily.
 ### 1. POS Simulation
 
 An async Python simulator fires fake point-of-sale events to the ingest API using Poisson-distributed customer arrivals shaped by a per-hour `RUSH_CURVE`. Each store runs as an independent async task.
+
+On startup, the simulator queries Snowflake for the most recent `created_at` in `RAW.SALES_EVENTS` and resumes the simulation clock from that timestamp — so a service restart picks up where the timeline left off rather than regenerating already-extracted events. If Snowflake is empty, it falls back to the historical data start date (Feb 12, 2026).
 
 A `StoreState` class tracks FIFO batch inventory per item. Production decisions fire **once per 15-minute slot boundary** — not every tick. The look-ahead window equals the item's hold time, so the kitchen always cooks enough to cover the full shelf life. Cook quantities are scaled by `RUSH_CURVE[hour]` to prevent over-production at 3am and under-production at noon. On startup, inventory is pre-seeded from the current slot's predictions so the kitchen starts with realistic stock rather than empty shelves.
 
@@ -149,7 +151,7 @@ Each table shows predicted units and missed demand (units lost to stockouts). Ki
 
 Results are appended to `data/ab_results.json` (daily + cumulative metrics). The nightly cron job runs this after retraining, then commits and pushes the JSON to GitHub. A GitHub Actions workflow triggers the Astro portfolio site to rebuild with fresh numbers.
 
-> **Honest finding:** The ML system reduces stockouts by ~31% vs. the baseline but increases waste by ~5.5 percentage points. Two causes: 4× more production checks means 4× more minimum-batch cook opportunities, and the LightGBM model slightly overpredicts. A production system would need a cost function weighing stockout revenue loss against waste cost to optimize the trade-off — the framework surfaces the real tension.
+> **Honest finding:** The ML system achieves +1.6pp better service level (97.6% vs. 96.1%) and reduces stockout events by ~40%, at the cost of +3.3pp more waste (8.6% vs. 5.3%). The waste gap is driven by the ML model's 15-minute production checks firing 4× more often against the minimum batch floor than the baseline's hourly checks. A production system would need a cost function weighing stockout revenue loss against waste cost per item to optimize the trade-off — the framework surfaces the real tension.
 
 ---
 
@@ -207,12 +209,15 @@ kitchensync/
 │   ├── app.py                 # Streamlit entry point
 │   ├── components/            # production_plan.py, waste_summary.py, store_selector.py
 │   └── utils/data_fetch.py    # get_production_plan(), get_waste_summary()
-└── scripts/
-    ├── init_db.py             # One-time Neon schema creation
-    ├── extract_to_snowflake.py
-    ├── run_prediction_update.py  # extract + dbt (runs every 5 min during simulation)
-    ├── run_training.py           # full pipeline including train (run manually)
-    └── run_daily_simulation.py   # A/B comparison — ML vs baseline, outputs ab_results.json
+├── scripts/
+│   ├── init_db.py             # One-time Neon schema creation
+│   ├── extract_to_snowflake.py
+│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push
+│   ├── run_prediction_update.py  # extract + dbt (runs every 5 min during simulation)
+│   ├── run_training.py           # full pipeline including train (run manually)
+│   └── run_daily_simulation.py   # A/B comparison — ML vs baseline, outputs ab_results.json
+├── Dockerfile                 # FastAPI ingest service (production uses EC2 + systemd)
+└── docker-compose.yml         # Full stack: API + simulator + dashboard
 ```
 
 ---
@@ -231,7 +236,7 @@ kitchensync/
 cp .env.example .env
 ```
 
-Fill in Neon, Snowflake, API, and simulator credentials. See `.env.example` for all required fields.
+Fill in Neon, Snowflake, API, and simulator credentials. See `.env.example` for all required fields. `SNOWFLAKE_PRIVATE_KEY_PATH` defaults to `~/.ssh/snowflake_rsa.p8` if not set.
 
 ### Install Dependencies
 
@@ -302,7 +307,7 @@ Results are written to `data/ab_results.json`. Run this after `run_training.py` 
 The live system runs on AWS EC2:
 
 - **API** and **simulator** run as systemd services (auto-restart on crash or reboot)
-- **Nightly cron (2am UTC):** extract → dbt → retrain → predict → A/B comparison → git push
+- **Nightly cron (2am UTC):** extract → dbt → predict → A/B comparison → git push (model retraining is run manually after significant data accumulation)
 - **GitHub Actions** triggers the Astro portfolio site to rebuild after each push of `ab_results.json`
 
 Systemd service files are in `deploy/` (not committed — contain credentials).

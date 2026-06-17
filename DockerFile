@@ -1,11 +1,29 @@
+# KitchenSync — FastAPI Ingest Service
+#
+# Receives POS events from the simulator and writes to Neon (Postgres).
+# Production deployment uses EC2 + systemd; this image is provided for
+# containerized environments. See docker-compose.yml for the full stack.
+#
+# Note: the ML pipeline (extract → dbt → predict) and nightly A/B comparison
+# run as a cron job outside Docker and are not included here.
+#
+# Note: Snowflake RSA key auth requires mounting the private key into the
+# container. See docker-compose.yml for the volume configuration.
+
 FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install uv for fast, reproducible dependency resolution
 RUN pip install uv
-COPY pyproject.toml .
-RUN uv sync --frozen
+
+# Copy dependency manifests first — Docker caches this layer separately
+# so `uv sync` only reruns when dependencies actually change
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 COPY . .
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000
+
+CMD ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

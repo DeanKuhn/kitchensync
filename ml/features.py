@@ -26,7 +26,8 @@ FEATURE_COLS = [
 
 
 def get_snowflake_engine(schema="MARTS"):
-    with open("/home/ubuntu/.ssh/snowflake_rsa.p8", "rb") as f:
+    key_path = os.path.expanduser(os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH", "~/.ssh/snowflake_rsa.p8"))
+    with open(key_path, "rb") as f:
         private_key = load_pem_private_key(f.read(), password=None)
     account=os.getenv("SNOWFLAKE_ACCOUNT")
     user=os.getenv("SNOWFLAKE_USER")
