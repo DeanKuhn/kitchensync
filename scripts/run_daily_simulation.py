@@ -349,6 +349,20 @@ def main():
     # seed_date = datetime.now()
     seed_date = datetime(2026, 6, 17)
 
+    # Diagnostic: compare total estimated demand for the simulation day
+    dow = seed_date.weekday()
+    day_slots = range(dow * 96, (dow + 1) * 96)
+    ml_total = sum(ml_predictions.get((s["id"], slot, item["id"]), 0)
+                   for s in stores["stores"]
+                   for slot in day_slots
+                   for item in menu["items"] if item["active"])
+    base_total = sum(baseline_predictions.get((s["id"], slot, item["id"]), 0)
+                     for s in stores["stores"]
+                     for slot in day_slots
+                     for item in menu["items"] if item["active"])
+    print(f"\nML demand estimate (day):       {ml_total:.1f}")
+    print(f"Baseline demand estimate (day): {base_total:.1f}\n")
+
     # Call simulate_day twice, storing results
     ml_totals = simulate_day(ml_predictions, seed_date, mode="ml")
     baseline_totals = simulate_day(baseline_predictions, seed_date, mode="baseline")

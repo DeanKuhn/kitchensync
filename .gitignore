@@ -2,5 +2,5 @@ __pycache__/
 .venv/
 .env
 .vscode/
-ml/models/
 data/
+ml/models/

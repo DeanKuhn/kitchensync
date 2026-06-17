@@ -103,7 +103,7 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
     X = df_warm[FEATURE_COLS]
 
     # Run inference
-    df_warm['predicted_units'] = lgbm.predict(X).round().astype(int)
+    df_warm['predicted_units'] = lgbm.predict(X)
 
     # Decode encoded columns
     df_warm['store_id'] = store_encoder.inverse_transform(df_warm['store_id'])
@@ -119,7 +119,7 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
     df_cold = df_cold.merge(df_cold_start[['category', 'slot_index', 'category_avg']],
                             on=['category', 'slot_index'])
 
-    df_cold['predicted_units'] = df_cold['category_avg'].round().astype(int)
+    df_cold['predicted_units'] = df_cold['category_avg']
 
 
     # Recombine and return
@@ -141,14 +141,19 @@ if __name__ == "__main__":
     print("Loading current conditions from Snowflake...")
     df_features = get_slot_features()
 
-    print("--- df_features['store_id'].nunique() ---")
-    print(df_features['store_id'].nunique())
+    # Build full spine: all store × item × slot_index combinations (338,688 rows)
+    slot_df = pd.DataFrame({'slot_index': range(672)})
+    full_grid = grid.merge(slot_df, how='cross')
 
-    # Combine features and the grid
-    df = grid.merge(df_features, on=["store_id", "item_id"], how="left")
+    # Left-join profile features onto full spine
+    df = full_grid.merge(df_features, on=["store_id", "item_id", "slot_index"], how="left")
 
-    print("--- df['sample_size'].isna().sum() ---")
-    print(df['sample_size'].isna().sum())
+    # Derive time features from slot_index for rows missing from profile
+    df['day_of_week'] = df['day_of_week'].fillna(df['slot_index'] // 96).astype(int)
+    df['sale_hour']   = df['sale_hour'].fillna((df['slot_index'] % 96) // 4).astype(int)
+    df['sale_minute'] = df['sale_minute'].fillna((df['slot_index'] % 4) * 15).astype(int)
+    df['avg_slot_quantity'] = df['avg_slot_quantity'].fillna(0)
+    df['sample_size'] = df['sample_size'].fillna(0)
 
     # Create a new column, category, with no null values
     df['category'] = df['category_y'].fillna(df['category_x'])
