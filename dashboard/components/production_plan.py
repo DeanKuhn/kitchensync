@@ -23,6 +23,8 @@ def production_plan(df):
     df_done = df[df['done'] == True]
     df = df[df['done'] == False]
 
+    df["predicted_units"] = df["predicted_units"].round().astype(int)
+
     df_kitchen = df[df['category'].isin(['sandwich', 'roller_grill', 'side'])]
     df_chicken = df[df['category'].isin(['chicken', 'appetizer'])]
 
