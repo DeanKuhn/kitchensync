@@ -32,7 +32,7 @@ def main():
     run("PYTHONPATH=. uv run python scripts/run_daily_simulation.py",
         "A/B simulation → data/ab_results.json")
 
-    run("git add data/ab_results.json && git commit -m 'Daily A/B results $(date +%Y-%m-%d)' && git push",
+    run("git add data/ab_results.json && git commit -m \"Daily A/B results $(date +%Y-%m-%d)\" && git pull --rebase origin master && git push",
         "Commit and push ab_results.json")
 
     elapsed = (datetime.now() - start).seconds
