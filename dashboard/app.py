@@ -1,6 +1,14 @@
 # Streamlit entry point
 
 
+import os
+import sys
+
+# Ensure the repo root is importable regardless of how the app is launched
+# (locally we rely on PYTHONPATH=., but hosted runners like Streamlit
+# Community Cloud invoke `streamlit run dashboard/app.py` directly).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import streamlit as st # type:ignore
 from streamlit_autorefresh import st_autorefresh # type:ignore
 from dashboard.components.store_selector import store_selector

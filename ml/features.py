@@ -26,9 +26,17 @@ FEATURE_COLS = [
 
 
 def get_snowflake_engine(schema="MARTS"):
-    key_path = os.path.expanduser(os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH", "~/.ssh/snowflake_rsa.p8"))
-    with open(key_path, "rb") as f:
-        private_key = load_pem_private_key(f.read(), password=None)
+    key_pem = os.getenv("SNOWFLAKE_PRIVATE_KEY")
+    if key_pem:
+        # Cloud deployments (e.g. Streamlit Community Cloud) have no
+        # filesystem to mount a key file into, so the PEM contents are
+        # passed directly via a secret/env var instead.
+        key_bytes = key_pem.encode()
+    else:
+        key_path = os.path.expanduser(os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH", "~/.ssh/snowflake_rsa.p8"))
+        with open(key_path, "rb") as f:
+            key_bytes = f.read()
+    private_key = load_pem_private_key(key_bytes, password=None)
     account=os.getenv("SNOWFLAKE_ACCOUNT")
     user=os.getenv("SNOWFLAKE_USER")
     database=os.getenv("SNOWFLAKE_DATABASE")
