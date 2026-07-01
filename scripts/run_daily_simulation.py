@@ -346,8 +346,7 @@ def main():
     baseline_predictions = load_baseline_predictions()
 
     # Set seed_date
-    # seed_date = datetime.now()
-    seed_date = datetime(2026, 6, 17)
+    seed_date = datetime.now()
 
     # Diagnostic: compare total estimated demand for the simulation day
     dow = seed_date.weekday()
