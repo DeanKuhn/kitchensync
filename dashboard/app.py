@@ -26,6 +26,7 @@ st.title('KitchenSync Production Plan')
 
 store_id = store_selector()
 df = get_production_plan(store_id)
+st.caption(f"Predicting for: {df.attrs['predicted_for'].strftime('%A %I:%M %p %Z')}")
 production_plan(df)
 
 df_waste = get_waste_summary(store_id)
