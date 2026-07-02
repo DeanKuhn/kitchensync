@@ -7,6 +7,7 @@ import pandas as pd
 
 from ml.features import get_snowflake_engine
 import ml.features as features
+from simulator.pos_simulator import HOURS_AVAILABLE
 
 COLD_START_THRESHOLD = 4
 FEATURE_COLS = features.FEATURE_COLS
@@ -23,7 +24,9 @@ def get_all_store_items():
     query = """
         select
             item_id,
-            category
+            category,
+            time_of_day,
+            added
         from PUBLIC.MENU_ITEMS
         where active = true
     """
@@ -141,9 +144,31 @@ if __name__ == "__main__":
     print("Loading current conditions from Snowflake...")
     df_features = get_slot_features()
 
-    # Build full spine: all store × item × slot_index combinations (338,688 rows)
+    # Build full spine: all store × item × slot_index combinations
     slot_df = pd.DataFrame({'slot_index': range(672)})
     full_grid = grid.merge(slot_df, how='cross')
+
+    # Drop slot/item combos outside the item's time_of_day window (and items
+    # not yet added) - these can never have real sales, so leaving them in
+    # lets the cold-start category average leak nonzero values from other
+    # items in the same category with a different window (see decision #18).
+
+    full_grid['hour'] = (full_grid['slot_index'] % 96) // 4
+
+    full_grid['window_start'] = full_grid['time_of_day'].map(
+        lambda t: HOURS_AVAILABLE[t][0])
+
+    full_grid['window_end'] = full_grid['time_of_day'].map(
+        lambda t: HOURS_AVAILABLE[t][1])
+
+    in_window = (full_grid['hour'] >= full_grid['window_start']) & \
+        (full_grid['hour'] < full_grid['window_end'])
+
+    not_yet_added = pd.to_datetime(full_grid['added']).dt.date > \
+        pd.Timestamp.now().date()
+
+    full_grid = full_grid[in_window & ~not_yet_added].drop(
+        columns=['hour', 'window_start', 'window_end', 'time_of_day', 'added'])
 
     # Left-join profile features onto full spine
     df = full_grid.merge(df_features, on=["store_id", "item_id", "slot_index"], how="left")
