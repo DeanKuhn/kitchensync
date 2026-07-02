@@ -105,7 +105,7 @@ Built by someone who works with the real system daily.
 
 An async Python simulator fires fake point-of-sale events to the ingest API using Poisson-distributed customer arrivals shaped by a per-hour `RUSH_CURVE`. Each store runs as an independent async task.
 
-On startup, the simulator queries Snowflake for the most recent `created_at` in `RAW.SALES_EVENTS` and resumes the simulation clock from that timestamp — so a service restart picks up where the timeline left off rather than regenerating already-extracted events. If Snowflake is empty, it falls back to the historical data start date (Feb 12, 2026).
+On startup, the simulator queries Snowflake for the most recent `created_at` in `RAW.SALES_EVENTS` and resumes the simulation clock from that timestamp — so a service restart picks up where the timeline left off rather than regenerating already-extracted events. If Snowflake is empty, it falls back to a hardcoded date that's kept in sync with the historical generator's `START_DATE`.
 
 A `StoreState` class tracks FIFO batch inventory per item. Production decisions fire **once per 15-minute slot boundary** — not every tick. The look-ahead window equals the item's hold time, so the kitchen always cooks enough to cover the full shelf life. Cook quantities are scaled by `RUSH_CURVE[hour]` to prevent over-production at 3am and under-production at noon. On startup, inventory is pre-seeded from the current slot's predictions so the kitchen starts with realistic stock rather than empty shelves.
 
@@ -182,13 +182,15 @@ Prophet is a black box for interviews. LightGBM allows explicit feature engineer
 ```
 kitchensync/
 ├── config/
-│   ├── menu.yaml              # Items: id, category, hold_time, cook_time, batch_size, popularity
+│   ├── menu.yaml              # Items: id, category, hold_time, cook_time, batch, popularity
 │   └── stores.yaml            # 12 stores, 4 regions, traffic levels 1–4
 ├── data/
 │   └── ab_results.json        # Nightly A/B comparison output (read by portfolio site)
 ├── simulator/
 │   ├── pos_simulator.py       # Live async simulator
-│   └── historical_generator.py # 42-day historical data generator
+│   ├── historical_generator.py # Historical data generator (one execute_values call per day)
+│   └── fast_historical_generator.py # Same generator, one execute_values call per store
+│                                     # (page_size=10000) — ~100x fewer Neon round-trips
 ├── api/
 │   ├── routes/events.py       # POST /sales, /waste, /stockout
 │   ├── models/schemas.py      # Pydantic event models
@@ -211,11 +213,10 @@ kitchensync/
 │   └── utils/data_fetch.py    # get_production_plan(), get_waste_summary()
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema creation
-│   ├── extract_to_snowflake.py
-│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push
-│   ├── run_prediction_update.py  # extract + dbt (runs every 5 min during simulation)
-│   ├── run_training.py           # full pipeline including train (run manually)
-│   └── run_daily_simulation.py   # A/B comparison — ML vs baseline, outputs ab_results.json
+│   ├── extract_to_snowflake.py   # Incremental (per-store watermark on created_at)
+│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push (no train)
+│   ├── run_daily_simulation.py   # A/B comparison — ML vs baseline, outputs ab_results.json
+│   └── delete_simulation_data.py # Wipes simulation data from Neon and/or Snowflake RAW
 ├── Dockerfile                 # FastAPI ingest service (production uses EC2 + systemd)
 └── docker-compose.yml         # Full stack: API + simulator + dashboard
 ```
@@ -269,14 +270,18 @@ Update `~/.dbt/profiles.yml` to use `private_key_path: ~/.ssh/snowflake_rsa.p8` 
 # 1. Initialize Neon schemas (one time only)
 PYTHONPATH=. uv run python scripts/init_db.py
 
-# 2. Generate 42 days of historical data (Jan 1 – Feb 11, 2026)
-PYTHONPATH=. uv run python -m simulator.historical_generator
+# 2. Generate historical seed data (window set by START_DATE in the generator;
+#    fast_historical_generator is the same logic with far fewer Neon round-trips)
+PYTHONPATH=. uv run python -m simulator.fast_historical_generator
 
 # 3. Upload menu seed data to Snowflake
 uv run dbt seed --project-dir dbt
 
-# 4. Run the full pipeline (extract → dbt → train → predict)
-PYTHONPATH=. uv run python -m scripts.run_training
+# 4. Run the pipeline, then train and predict
+PYTHONPATH=. uv run python scripts/extract_to_snowflake.py
+uv run dbt run --project-dir dbt
+PYTHONPATH=. uv run python -m ml.train
+PYTHONPATH=. uv run python -m ml.predict
 ```
 
 ### Running the System
@@ -298,7 +303,7 @@ PYTHONPATH=. uv run python -m simulator.pos_simulator
 PYTHONPATH=. uv run python scripts/run_daily_simulation.py
 ```
 
-Results are written to `data/ab_results.json`. Run this after `run_training.py` for fresh predictions.
+Results are written to `data/ab_results.json`. Run this after retraining (`python -m ml.train` then `python -m ml.predict`) for fresh predictions.
 
 ---
 
@@ -330,7 +335,7 @@ New items added to `config/menu.yaml` are automatically handled by the cold-star
 
 | Period | Data |
 |---|---|
-| Jan 1 – Feb 11, 2026 | 42 days of synthetic historical data (~2.7M events) |
-| Feb 12, 2026 onward | Live simulation |
+| 6-week window ending at simulator startup | Synthetic historical data, generated via `simulator/fast_historical_generator.py`; window is set by `START_DATE` at the top of the file and regenerated periodically (current window: 2026-05-20 – 2026-06-30) |
+| From simulator startup onward | Live simulation, resuming from Snowflake's last extracted timestamp on restart |
 
 Cold-start items (added Feb 12): `CHIMI`, `BUFFALO_CHICKEN_ROLLERBITES`, `JALAPENO_BITES`

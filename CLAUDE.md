@@ -118,7 +118,11 @@ kitchensync/
 ├── simulator/
 │   ├── __init__.py
 │   ├── pos_simulator.py       # Fires fake POS events to the ingest API
-│   └── historical_generator.py # Generates ~2.7M synthetic events via psycopg2 batch inserts
+│   ├── historical_generator.py # Generates synthetic events via psycopg2 batch inserts (one execute_values call per day)
+│   └── fast_historical_generator.py # Same generator logic, but batches each store's entire
+│                                     # date range into a single execute_values call
+│                                     # (page_size=10000) instead of one per day — ~100x fewer
+│                                     # Neon round-trips. Prefer this for bulk (re)seeding.
 │
 ├── api/
 │   ├── __init__.py
@@ -170,11 +174,13 @@ kitchensync/
 │
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema + table creation
-│   ├── extract_to_snowflake.py # Full reload: Neon → KS_DB.RAW
-│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push
-│   ├── run_prediction_update.py # extract → dbt → predict (no train; runs every 5 min in simulator)
-│   ├── run_training.py        # Full pipeline including train step (run manually before simulation)
-│   └── delete_simulation_data.py # Wipes live simulation data from Neon for a clean restart
+│   ├── extract_to_snowflake.py # Incremental (per-store watermark on created_at): Neon → KS_DB.RAW
+│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push (no train step)
+│   ├── run_daily_simulation.py # A/B comparison — ML vs baseline, outputs data/ab_results.json
+│   ├── delete_simulation_data.py # Wipes simulation data from BOTH Neon (delete_neon) and
+│   │                              # Snowflake RAW (delete_snowflake) — run delete_snowflake alone
+│   │                              # if Neon already has data you want to keep (e.g. a fresh reseed)
+│   └── update_dbt_token.py
 │
 └── tests/
     ├── test_api.py
@@ -189,18 +195,19 @@ kitchensync/
 ### Completed
 - All 12 store schemas in Neon with `sales_events`, `waste_log`, `stockout_events` tables
 - FastAPI ingest API with three endpoints: `/sales`, `/waste`, `/stockout`
-- Historical data generator — 42 days (Jan 1 – Feb 11, 2026), Poisson-based, sale-day aware
-- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding, 24-hour prediction reload
+- Historical data generator (`historical_generator.py` / `fast_historical_generator.py`) — 6-week window, Poisson-based, sale-day aware; `START_DATE` is a constant at the top of the file, updated whenever the window is regenerated
+- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding (rounded to a whole unit), 24-hour prediction reload
 - Snowflake: `KS_DB`, `KS_WH`, `RAW.SALES_EVENTS`, `RAW.WASTE_LOG`, `RAW.STOCKOUT_EVENTS`
 - Full dbt pipeline: staging → intermediate → marts (all models live, 15-min slot grain)
-- LightGBM model trained, 190,773 predictions (12 stores × 42 items × 672 slots) written to `MARTS.PREDICTIONS`
+- LightGBM model trained, 190,773 predictions (12 stores × 42 items × 672 slots) written to `MARTS.PREDICTIONS` — retrain via `python -m ml.train` then `python -m ml.predict` (no wrapper script; `run_training.py` no longer exists)
 - Cold-start fallback via `mart_cold_start_profile` (category-level averages by slot_index, threshold = 4 samples)
-- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot, missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table
+- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot (store-local timezone, `America/Chicago`), missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table, deployed live on Streamlit Community Cloud
 - A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results.json`
 - AWS EC2 deployment: API + simulator as systemd services (auto-restart on crash/reboot)
-- Nightly cron pipeline: extract → dbt → predict → A/B comparison → git push (retraining is run manually)
+- Nightly cron pipeline: `git pull` → extract → dbt → predict → A/B comparison → git push (retraining is run manually); commit step guards against "nothing to commit" so a no-op day doesn't fail the whole run
 - Portfolio site integration: `ab_results.json` committed to GitHub nightly, consumed by Astro static site
 - Snowflake auth: RSA key pair (`~/.ssh/snowflake_rsa.p8`), registered via `ALTER USER`
+- Two production-logic bugs found and fixed (2026-07-01/02) — see design decisions #18 and #19 below
 
 ---
 
@@ -343,19 +350,19 @@ Reads all slots from `INT_SALES__TIME_OF_DAY_PROFILE`, runs warm (LightGBM) or c
 ### Key Parameters
 - `TIME_SCALE = 20` — 1 real second = 20 simulated seconds
 - `TICK_INTERVAL = 1` — real seconds per tick
-- `START_TIME` — determined at startup by `get_start_time()`: queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` in Snowflake and resumes from that timestamp; falls back to `datetime(2026, 2, 12, 0, 0, 0)` if Snowflake is empty
+- `START_TIME` — determined at startup by `get_start_time()`: queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` in Snowflake and resumes from that timestamp; falls back to `datetime(2026, 7, 1, 0, 0, 0)` if Snowflake is empty (update this fallback whenever the historical seed window is regenerated with a new `START_DATE`)
 
 ### Production Logic
-- Fires once per 15-min slot boundary (`slot_idx != last_slot_idx`)
+- Fires when `slot_idx != last_slot_idx and (is_rush or slot_idx % 4 == 0)`, where `is_rush = RUSH_CURVE[hour] >= 0.6`
+- Per item, skips the cook decision entirely if `(not item["active"]) or (item["added"] > sim_now.date()) or (hour not in range(HOURS_AVAILABLE[item["time_of_day"]]))` — **must be an OR of the three skip-conditions**, not an AND; an AND collapses to always-False for active items and silently cooks off-window items 24/7 (this exact bug shipped and caused chronic overproduction — see design decision #18)
 - `look_ahead = int(item["hold_time"] * 4)` slots
 - `demand = sum(predictions for next look_ahead slots)`
 - `committed = current_inventory + in_progress`
 - `gap = demand - committed`
-- `cook_qty = max(scaled_batch, gap) if gap > 0 else 0`
-- `scaled_batch = max(1, round(item["batch_size"] * 2 * RUSH_CURVE[hour]))` — batch size scales with traffic level
+- `cook_qty = int(np.ceil(gap)) if gap > 1 else 0` — no minimum-batch floor; the old `scaled_batch = batch_size * 2 * RUSH_CURVE[hour]` floor was intentionally removed (commit `ccf1577`, 2026-06-14) because a floor forces low-traffic stores to overproduce relative to their thin demand. The remaining `ceil()`+`>1` threshold still imposes an implicit ~1-unit rounding tax per forced cook check, which is a known, accepted, conservative tradeoff — not a bug to "fix" by reintroducing a floor.
 
 ### Startup Seeding
-On `StoreState` init, inventory is pre-seeded with the predicted units for the current slot per item (respecting `time_of_day` availability). Prevents stockout cascade before first slot boundary fires.
+On `StoreState` init, inventory is pre-seeded with the predicted units for the current slot per item (respecting `time_of_day` availability), **rounded to a whole number** (`predicted_units` from `MARTS.PREDICTIONS` is an unrounded float — every other cook-quantity code path rounds explicitly, and this one must too, or fractional quantities propagate through `consume()`/waste logging for the life of that batch; see design decision #19). Prevents stockout cascade before first slot boundary fires.
 
 ### Background Tasks
 - `refresh_targets_task()` — loads `MARTS.PREDICTIONS` once at startup, does not repeat
@@ -392,7 +399,7 @@ Traffic levels 1–4 control simulated sales volume. Hours are either `24/7` or 
 
 ## Menu Configuration
 
-Defined in `config/menu.yaml`. Fields: `id`, `name`, `price`, `sale_price`, `sale_days`, `cost`, `time_of_day`, `category`, `hold_time`, `cook_time`, `batch_size`, `popularity`, `active`, `added`.
+Defined in `config/menu.yaml`. Fields: `id`, `name`, `price`, `sale_price`, `sale_days`, `cost`, `time_of_day`, `category`, `hold_time`, `cook_time`, `batch`, `popularity`, `active`, `added`.
 
 **`time_of_day`** — controls availability windows in the simulator:
 - `all_day`: [0, 24]
@@ -406,7 +413,7 @@ Defined in `config/menu.yaml`. Fields: `id`, `name`, `price`, `sale_price`, `sal
 **`cook_time`** — minutes from order to ready (used for `ready_at` in simulator):
 - `sandwich`: 10 min, `side`: 5 min, `roller_grill`: 10 min, `chicken`: 15 min, `appetizer`: 5 min
 
-**`batch_size`** — minimum realistic cook quantity per item; scaled by `RUSH_CURVE[hour] * 2` during production logic
+**`batch`** — no longer used by the production logic (the `scaled_batch`/`RUSH_CURVE`-floor formula that once read this field was removed, see design decision #11) — currently dead config, referenced nowhere in `*.py`
 
 **Waste display mapping:**
 - Hot Foods = `sandwich` + `side`
@@ -512,10 +519,12 @@ NUM_STORES=12
 8. **`generate_schema_name` macro** — overrides dbt's default schema prefixing to produce clean `STAGING`, `INTERMEDIATE`, `MARTS` schemas
 9. **Config-file-driven menu** — items toggled without code changes; cold-start logic handles new items
 10. **Slot-boundary production logic** — cook decisions fire once per 15-min boundary, not every tick; look-ahead window = `hold_time * 4` slots
-11. **RUSH_CURVE-scaled batch sizes** — minimum cook quantity scales with hourly traffic to prevent over-production during dead hours and under-production during rush
-12. **Retraining is manual** — cron runs extract → dbt → predict → A/B nightly but does not retrain the model. Retraining is triggered manually after significant data accumulation. The model is committed to git (`ml/models/lgbm.joblib`) so EC2 can pull a new model without running training on the t3.micro (which OOMs)
+11. **No minimum-batch floor for cook quantities** *(superseded 2026-06-14, commit `ccf1577`)* — an earlier version scaled a minimum cook quantity by hourly traffic (`batch_size * 2 * RUSH_CURVE[hour]`) to avoid under-production during rush. This was deliberately removed: a floor forces low-traffic stores to overproduce relative to their genuinely thin demand, which is worse than the alternative. Current logic (`cook_qty = int(np.ceil(gap)) if gap > 1 else 0`) has no floor, only rounding.
+12. **Retraining is manual** — cron runs extract → dbt → predict → A/B nightly but does not retrain the model. Retraining is triggered manually after significant data accumulation via `python -m ml.train` then `python -m ml.predict` (no wrapper script). The model is committed to git (`ml/models/lgbm.joblib`) so EC2 can pull a new model without running training on the t3.micro (which OOMs)
 13. **A/B baseline never writes to Neon** — baseline system is purely in-memory metrics; only ML system generates training data; prevents baseline behavior from corrupting the model's learning signal
-14. **Honest A/B finding** — ML achieves +1.6pp better service level (97.6% vs 96.1%) and ~40% fewer stockout events, at the cost of +3.3pp more waste (8.6% vs 5.3%); root cause is 4x more production checks hitting the minimum batch floor more often; a production system would need a cost function to balance the trade-off
+14. **Honest A/B finding** — ML achieves +1.6pp better service level (97.6% vs 96.1%) and ~40% fewer stockout events, at the cost of +3.3pp more waste (8.6% vs 5.3%); root cause is the ML system's production checks firing ~4x more often (every 15-min slot boundary vs. baseline's hourly), each subject to the same `ceil()`-driven ~1-unit rounding tax described in decision #11 — not a batch floor (there isn't one); a production system would need a cost function to balance the trade-off
 15. **Conditional mean bias fix (2026-06-13)** — `int_sales__time_of_day_profile` originally averaged only over days with non-zero sales, making `avg_slot_quantity` a conditional mean (E[X|X>0]) instead of the true expected demand. For low-traffic stores this inflated predictions 3–4x. Fixed by computing `SUM(quantity) / total_dates` where `total_dates` counts all observed days for that store/day_of_week, including zero-sale days.
-16. **Simulator restart resume** — `get_start_time()` queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` at startup and uses that as `START_TIME`, so the simulation clock resumes from the last extracted timestamp rather than re-generating already-seen events. Falls back to `datetime(2026, 2, 12, 0, 0, 0)` if Snowflake is empty. A small gap of un-extracted Neon events may be re-simulated after a restart, but the watermark on the extract blocks true duplicates from entering Snowflake.
+16. **Simulator restart resume** — `get_start_time()` queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` at startup and uses that as `START_TIME`, so the simulation clock resumes from the last extracted timestamp rather than re-generating already-seen events. Falls back to a hardcoded date if Snowflake is empty — keep this fallback in sync with `START_DATE` in the historical generator whenever the seed window is regenerated. A small gap of un-extracted Neon events may be re-simulated after a restart, but the watermark on the extract blocks true duplicates from entering Snowflake.
 17. **Snowflake RSA key path via env var** — `SNOWFLAKE_PRIVATE_KEY_PATH` defaults to `~/.ssh/snowflake_rsa.p8` if not set. Avoids hardcoding the EC2-specific absolute path and makes the Docker setup portable. Used in `ml/features.py` (SQLAlchemy engine) and `scripts/extract_to_snowflake.py` (connector).
+18. **Production time-of-day gate must be OR, not AND (fixed 2026-07-02)** — `pos_simulator.py`'s per-item cook-decision skip check was written as `if (not item["active"] and item["added"] <= date and hour not in range(...)): continue`. Since `not item["active"]` is `False` for every real menu item, the whole `and`-chain collapsed to `False` and `continue` never fired — off-window items (e.g. chicken, available only 9am–10pm) got cook orders computed 24/7, with zero matching demand outside their window. This produced chronic overproduction concentrated at low-traffic stores (waste % inversely correlated with store traffic level: ~88% at level-1 stores vs. ~17% at level-4). Fixed to `if (not item["active"]) or (item["added"] > date) or (hour not in range(...)): continue` — an OR of the three skip-conditions, matching the (already-correct) positive filter used on the sales-generation side of the same file. `historical_generator.py` and `run_daily_simulation.py` were both already correct and unaffected.
+19. **Startup-seeded inventory must be rounded (fixed 2026-07-02)** — `StoreState` startup seeding used the raw `predicted_units` sum from `MARTS.PREDICTIONS` directly as a batch `quantity`, without rounding. `predicted_units` is stored as an unrounded float; every other cook-quantity code path explicitly rounds (`int(np.ceil(gap))`), but this one didn't. Since `consume()` only subtracts whole-number sale quantities from a batch, the fractional remainder persisted through the batch's lifecycle and showed up as a fractional quantity in waste logs too, if the batch expired before selling out. Fixed with `seed_demand = round(seed_demand)`. Self-limiting even before the fix: seeding only runs once at simulator startup, so the fractional contamination fully flushes out (sold or wasted) within one `hold_time` window and never recurs.
