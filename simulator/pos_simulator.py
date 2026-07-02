@@ -58,7 +58,7 @@ WEEKDAY_MULTIPLIER = {
 
 def get_start_time():
 
-    fallback = datetime(2026, 2, 12, 0, 0, 0)
+    fallback = datetime(2026, 7, 1, 0, 0, 0)
     try:
         engine = get_snowflake_engine()
         result = pd.read_sql(
@@ -355,8 +355,8 @@ async def simulate_store(config, clock, client):
         if slot_idx != last_slot_idx and (is_rush or slot_idx % 4 == 0):
             last_slot_idx = slot_idx
             for item in menu["items"]:
-                if (not item["active"] and item["added"] <= sim_now.date()
-                    and hour not in range(
+                if (not item["active"]) or (item["added"] > sim_now.date()) or (
+                    hour not in range(
                         HOURS_AVAILABLE[item["time_of_day"]][0],
                         HOURS_AVAILABLE[item["time_of_day"]][1])
                         ):

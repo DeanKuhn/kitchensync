@@ -75,13 +75,14 @@ for store in stores["stores"]:
     cursor = connection.cursor()
 
     try:
-        total_records_inserted = 0
+        # Accumulate the ENTIRE 6-week run for this store in memory, so we
+        # only round-trip to Neon once (via execute_values below) instead of
+        # once per day.
+        store_sales_batch = []
 
         for day_data in SIMULATION_DAYS:
             sim_date = day_data["date"]
             weekday_int = day_data["int"]
-
-            day_sales_batch = []
 
             # Simulates random days by creating a random offset
             random_offset = random.choices(
@@ -128,20 +129,19 @@ for store in stores["stores"]:
                         hour, random.randint(0, 59), random.randint(0, 59)
                     )
 
-                    day_sales_batch.append(
+                    store_sales_batch.append(
                         (item["id"], quantity, price, event_time))
 
-            # Daily addition to sales_events
-            if day_sales_batch:
-                execute_values(cursor, """
-                    INSERT INTO sales_events (item_id, quantity, price, created_at)
-                    VALUES %s
-                """, day_sales_batch)
-                total_records_inserted += len(day_sales_batch)
+        # Single INSERT (large page_size to minimize round-trips) + single
+        # commit for the entire store, instead of one round-trip per day.
+        if store_sales_batch:
+            execute_values(cursor, """
+                INSERT INTO sales_events (item_id, quantity, price, created_at)
+                VALUES %s
+            """, store_sales_batch, page_size=10000)
 
-        # Single commit per store block
         connection.commit()
-        print(f"[{store_id}] Successfully persisted {total_records_inserted} " \
+        print(f"[{store_id}] Successfully persisted {len(store_sales_batch)} " \
               "rows across 6 weeks.")
 
     except Exception as e:
