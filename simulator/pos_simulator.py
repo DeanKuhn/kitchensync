@@ -263,6 +263,7 @@ async def simulate_store(config, clock, client):
                 (store_id, (seed_slot_idx + i) % 672, item["id"]), 0)
                     for i in range(seed_look_ahead))
 
+            seed_demand = round(seed_demand)
             if seed_demand > 0:
                 expires = seed_sim_now + timedelta(hours=item["hold_time"])
                 state.inventory[item["id"]] = [{"quantity": seed_demand,
