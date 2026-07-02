@@ -1,10 +1,10 @@
 {
   "cumulative": {
-    "days_run": 13,
-    "ml_avg_waste_pct": 9.04,
-    "baseline_avg_waste_pct": 5.46,
-    "ml_avg_service_level": 97.34,
-    "base_avg_service_level": 96.13
+    "days_run": 14,
+    "ml_avg_waste_pct": 9.03,
+    "baseline_avg_waste_pct": 5.34,
+    "ml_avg_service_level": 97.38,
+    "base_avg_service_level": 96.19
   },
   "daily": [
     {
@@ -226,6 +226,23 @@
         "units_wasted": 4264,
         "waste_cost": 5935.849999999999,
         "sales_revenue": 152969.73000000144
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "ml": {
+        "units_sold": 48480,
+        "stockouts": 1086,
+        "units_wasted": 9631,
+        "waste_cost": 13765.699999999997,
+        "sales_revenue": 153917.14000000147
+      },
+      "baseline": {
+        "units_sold": 47924,
+        "stockouts": 1525,
+        "units_wasted": 4024,
+        "waste_cost": 5726.35,
+        "sales_revenue": 151905.46000000148
       }
     }
   ]
