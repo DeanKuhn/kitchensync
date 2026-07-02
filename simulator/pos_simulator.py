@@ -23,7 +23,7 @@ for item in menu["items"]:
 
 
 # --- CONFIGURATION ---
-TIME_SCALE = 20
+TIME_SCALE = 1
 API_BASE_URL = "http://localhost:8000"
 TICK_INTERVAL = 1
 
