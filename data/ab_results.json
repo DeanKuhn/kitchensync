@@ -227,23 +227,6 @@
         "waste_cost": 5935.849999999999,
         "sales_revenue": 152969.73000000144
       }
-    },
-    {
-      "date": "2026-07-02",
-      "ml": {
-        "units_sold": 48480,
-        "stockouts": 1086,
-        "units_wasted": 9631,
-        "waste_cost": 13765.699999999997,
-        "sales_revenue": 153917.14000000147
-      },
-      "baseline": {
-        "units_sold": 47924,
-        "stockouts": 1525,
-        "units_wasted": 4024,
-        "waste_cost": 5726.35,
-        "sales_revenue": 151905.46000000148
-      }
     }
   ]
 }
