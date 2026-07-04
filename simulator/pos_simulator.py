@@ -208,8 +208,8 @@ async def fire_stockout(client, store_id, item_id, quantity_requested, sim_now):
 async def refresh_targets_task():
 
     while True:
-        # Technically a refresh, but since this is a weekly snapshot it is just
-        # loaded in once and left (in real world, would be ran weekly)
+        # Reloads MARTS.PREDICTIONS every 24h (see asyncio.sleep below) —
+        # not a one-time load
 
         engine = get_snowflake_engine()
         global production_targets

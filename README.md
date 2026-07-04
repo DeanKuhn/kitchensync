@@ -56,8 +56,8 @@ Built by someone who works with the real system daily.
                                                                          [ML Pipeline]
                                                                     ml/train.py (LightGBM)
                                                           ml/predict.py → MARTS.PREDICTIONS
-                                                              (190,773 predictions: 12 stores
-                                                               × 42 items × 672 slots)
+                                                              (up to 12 stores
+                                                               × 45 active items × 672 slots)
                                                                                   │
                                                        ┌──────────────────────────┴──────────────────────────┐
                                                        ▼                                                     ▼
@@ -131,16 +131,18 @@ All mart models use `QUALIFY ROW_NUMBER() OVER (PARTITION BY store_id, item_id O
 
 A LightGBM model predicts units to produce per store, per item, per 15-minute slot. Features are sourced from `int_sales__time_of_day_profile` and include `slot_index`, `sale_hour`, `sale_minute`, `day_of_week`, `is_weekend`, `avg_slot_quantity`, and label-encoded `store_id` / `item_id`.
 
-Inference produces **190,773 predictions** covering all 672 slots × 12 stores × 42 active items — a complete weekly production profile. Items with fewer than 4 historical data points fall back to category-level averages from `mart_cold_start_profile`.
+Inference covers all 672 slots × 12 stores × 45 active items, minus rows outside each item's `time_of_day` availability window (filtered before the cold-start merge to avoid leaking category averages into structurally-impossible slots — see design decision below). Items with fewer than 4 historical data points fall back to category-level averages from `mart_cold_start_profile`.
 
 ### 6. Streamlit Dashboard
 
-The dashboard queries `MARTS.PREDICTIONS` for the current 15-minute slot (computed from wall-clock time) and displays two separate production queues matching the real KPS layout:
+**Live at [kitchensync.streamlit.app](https://kitchensync.streamlit.app).**
+
+Predictions (a look-ahead sum over `MARTS.PREDICTIONS`, matching the simulator's own `hold_time`-based window) still come from the nightly Snowflake ETL, but stockout and waste numbers are queried live from Neon so "today's" figures aren't up to 24h stale. "Now" is anchored to Neon's own clock (`MAX(created_at)` from `sales_events`), not wall-clock time, since the EC2 simulator's sim clock can drift from real time. The dashboard displays two separate production queues matching the real KPS layout:
 
 - **[Kitchen]** — sandwiches, sides, roller grill items
 - **[Chicken]** — chicken pieces and appetizers
 
-Each table shows predicted units and missed demand (units lost to stockouts). Kitchen staff can check off completed batches — done items move to a completed table and are removed from the active queue. Session state persists checkboxes across the 5-minute auto-refresh. A waste summary below shows units sold, total sales revenue, and waste percentage per category group (Hot Foods / Roller Grill / Chicken).
+Each table shows predicted units and missed demand (units lost to stockouts, live from Neon). Kitchen staff can check off completed batches — done items move to a completed table and are removed from the active queue. Session state persists checkboxes across the 5-minute auto-refresh. A waste summary below shows units sold, total sales revenue, and waste percentage per category group (Hot Foods / Roller Grill / Chicken), also computed live from Neon.
 
 ### 7. A/B Comparison
 
@@ -151,7 +153,7 @@ Each table shows predicted units and missed demand (units lost to stockouts). Ki
 
 Results are appended to `data/ab_results.json` (daily + cumulative metrics). The nightly cron job runs this after retraining, then commits and pushes the JSON to GitHub. A GitHub Actions workflow triggers the Astro portfolio site to rebuild with fresh numbers.
 
-> **Honest finding:** The ML system achieves +1.6pp better service level (97.6% vs. 96.1%) and reduces stockout events by ~40%, at the cost of +3.3pp more waste (8.6% vs. 5.3%). The waste gap is driven by the ML model's 15-minute production checks firing 4× more often against the minimum batch floor than the baseline's hourly checks. A production system would need a cost function weighing stockout revenue loss against waste cost per item to optimize the trade-off — the framework surfaces the real tension.
+> **Honest finding:** The ML system achieves +1.6pp better service level (97.6% vs. 96.1%) and reduces stockout events by ~40%, at the cost of +3.3pp more waste (8.6% vs. 5.3%). There's no minimum-batch floor in either system — the waste gap comes from the ML model's 15-minute production checks firing 4× more often than the baseline's hourly checks, each subject to the same `ceil()`-driven ~1-unit rounding tax. A production system would need a cost function weighing stockout revenue loss against waste cost per item to optimize the trade-off — the framework surfaces the real tension.
 
 ---
 
@@ -167,7 +169,7 @@ Rather than predicting hourly demand, the model operates at 15-minute resolution
 Cook decisions fire once per slot change, not every simulator tick. The look-ahead window is `hold_time * 4` slots — the kitchen cooks enough to cover the item's full shelf life. This mirrors how real kitchen staff think: cook for the window, not the moment.
 
 **No retraining during simulation**
-`MARTS.PREDICTIONS` is a static weekly profile loaded once at simulator startup. The background pipeline (running every 5 minutes) runs extract + dbt only — never predict or train. Replacing the predictions table mid-simulation would corrupt the production logic and destabilize the dashboard.
+`MARTS.PREDICTIONS` is a static weekly profile the simulator reloads every 24h (not on every tick). The background pipeline (running every 5 minutes) runs extract + dbt only — never predict or train. Retraining and re-running inference mid-simulation is a manual step, not automatic.
 
 **Baseline never writes to Neon**
 The A/B baseline is purely in-memory. Only the ML system generates training data. Allowing baseline behavior to write to Neon would corrupt the model's learning signal over time.
@@ -206,11 +208,11 @@ kitchensync/
 ├── ml/
 │   ├── features.py            # FEATURE_COLS, Snowflake engine
 │   ├── train.py               # LightGBM training
-│   └── predict.py             # Inference → MARTS.PREDICTIONS (190,773 rows)
+│   └── predict.py             # Inference → MARTS.PREDICTIONS (time-of-day filtered)
 ├── dashboard/
 │   ├── app.py                 # Streamlit entry point
 │   ├── components/            # production_plan.py, waste_summary.py, store_selector.py
-│   └── utils/data_fetch.py    # get_production_plan(), get_waste_summary()
+│   └── utils/data_fetch.py    # get_production_plan() (Snowflake), get_waste_summary() (live Neon)
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema creation
 │   ├── extract_to_snowflake.py   # Incremental (per-store watermark on created_at)
@@ -323,7 +325,7 @@ Systemd service files are in `deploy/` (not committed — contain credentials).
 
 **12 stores** across 4 Midwest regions (West Wisconsin, South Wisconsin, Minnesota, Iowa). Traffic levels 1–4 control simulated sales volume.
 
-**42 active menu items** across 5 categories: `sandwich`, `side`, `roller_grill`, `chicken`, `appetizer`. Items map to two dashboard production queues:
+**45 active menu items** across 5 categories: `sandwich`, `side`, `roller_grill`, `chicken`, `appetizer`. Items map to two dashboard production queues:
 - **Kitchen** — sandwich + side + roller_grill
 - **Chicken** — chicken + appetizer
 

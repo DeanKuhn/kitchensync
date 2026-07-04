@@ -51,8 +51,8 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
                                                                          [ML Pipeline]
                                                                     ml/train.py (LightGBM)
                                                           ml/predict.py → MARTS.PREDICTIONS
-                                                              (190,773 predictions: 12 stores
-                                                               × 42 items × 672 slots)
+                                                              (up to 12 stores
+                                                               × 45 active items × 672 slots)
                                                                                   │
                                                        ┌──────────────────────────┴──────────────────────────┐
                                                        ▼                                                     ▼
@@ -160,7 +160,7 @@ kitchensync/
 │   ├── __init__.py
 │   ├── features.py            # FEATURE_COLS, get_snowflake_engine()
 │   ├── train.py               # LightGBM training, saves lgbm.joblib + encoders
-│   ├── predict.py             # Inference: writes 190,773 predictions to MARTS.PREDICTIONS
+│   ├── predict.py             # Inference: writes predictions to MARTS.PREDICTIONS (time-of-day filtered)
 │   ├── evaluate.py
 │   └── models/                # lgbm.joblib, store_encoder.joblib, item_encoder.joblib
 │
@@ -170,7 +170,8 @@ kitchensync/
 │   │   ├── production_plan.py # Split Kitchen/Chicken queues, session state checkboxes
 │   │   └── store_selector.py
 │   └── utils/
-│       └── data_fetch.py      # get_production_plan(), get_waste_summary()
+│       └── data_fetch.py      # get_production_plan(), get_waste_summary() — predictions
+│                                # from Snowflake, stockout/waste queried live from Neon
 │
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema + table creation
@@ -199,9 +200,9 @@ kitchensync/
 - Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding (rounded to a whole unit), 24-hour prediction reload
 - Snowflake: `KS_DB`, `KS_WH`, `RAW.SALES_EVENTS`, `RAW.WASTE_LOG`, `RAW.STOCKOUT_EVENTS`
 - Full dbt pipeline: staging → intermediate → marts (all models live, 15-min slot grain)
-- LightGBM model trained, 190,773 predictions (12 stores × 42 items × 672 slots) written to `MARTS.PREDICTIONS` — retrain via `python -m ml.train` then `python -m ml.predict` (no wrapper script; `run_training.py` no longer exists)
+- LightGBM model trained, predictions (12 stores × 45 active items × 672 slots, minus off-window slots filtered per item's `time_of_day`) written to `MARTS.PREDICTIONS` — retrain via `python -m ml.train` then `python -m ml.predict` (no wrapper script; `run_training.py` no longer exists)
 - Cold-start fallback via `mart_cold_start_profile` (category-level averages by slot_index, threshold = 4 samples)
-- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot (store-local timezone, `America/Chicago`), missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table, deployed live on Streamlit Community Cloud
+- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot (anchored to Neon's own clock via `get_sim_now()`, not wall-clock, since the sim clock can drift from real time), missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table, deployed live at [kitchensync.streamlit.app](https://kitchensync.streamlit.app) (Streamlit Community Cloud). Stockout/waste numbers are queried live from Neon (not the nightly Snowflake snapshot) as of the 2026-07-04/05 live-dashboard update; predictions still come from `MARTS.PREDICTIONS`.
 - A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results.json`
 - AWS EC2 deployment: API + simulator as systemd services (auto-restart on crash/reboot)
 - Nightly cron pipeline: `git pull` → extract → dbt → predict → A/B comparison → git push (retraining is run manually); commit step guards against "nothing to commit" so a no-op day doesn't fail the whole run
@@ -335,7 +336,7 @@ uv run dbt test --project-dir dbt
 ### Output
 - `predicted_units` — float, rounded to nearest integer
 - Written to `MARTS.PREDICTIONS` with columns: `store_id`, `item_id`, `predicted_units`, `slot_index`, `predicted_at`
-- 190,773 total predictions covering all 672 slots × 12 stores × 42 items
+- Predictions cover all 672 slots × 12 stores × 45 active items, minus rows filtered out for being outside an item's `time_of_day` window (see `ml/predict.py`'s grid filter)
 
 ### Cold-Start Logic
 Items with fewer than 4 data points fall back to category-level averages from `mart_cold_start_profile`, merging on `(category, slot_index)`.
@@ -365,7 +366,7 @@ Reads all slots from `INT_SALES__TIME_OF_DAY_PROFILE`, runs warm (LightGBM) or c
 On `StoreState` init, inventory is pre-seeded with the predicted units for the current slot per item (respecting `time_of_day` availability), **rounded to a whole number** (`predicted_units` from `MARTS.PREDICTIONS` is an unrounded float — every other cook-quantity code path rounds explicitly, and this one must too, or fractional quantities propagate through `consume()`/waste logging for the life of that batch; see design decision #19). Prevents stockout cascade before first slot boundary fires.
 
 ### Background Tasks
-- `refresh_targets_task()` — loads `MARTS.PREDICTIONS` once at startup, does not repeat
+- `refresh_targets_task()` — loads `MARTS.PREDICTIONS` at startup and reloads every 24h (`asyncio.sleep(86400)`), not a one-time load
 - `refresh_pipeline_task()` — runs extract + dbt every 300 seconds during simulation (no predict, no train)
 
 ### Running the Simulator
@@ -479,7 +480,7 @@ NUM_STORES=12
 - [x] Baseline model (scikit-learn RandomForest)
 - [x] LightGBM model at 15-min slot grain
 - [x] Cold-start logic (category-level fallback, threshold = 4 samples)
-- [x] Inference writes 190,773 predictions to `MARTS.PREDICTIONS` (12 stores × 42 items × 672 slots)
+- [x] Inference writes predictions to `MARTS.PREDICTIONS` (12 stores × 45 active items × 672 slots, minus off-window rows filtered per item's `time_of_day`)
 
 ### Phase 4 — Dashboard ✅
 - [x] Streamlit app with store selector
