@@ -2,6 +2,7 @@
 
 import streamlit as st # type:ignore
 
+
 def waste_summary(df):
 
     # Filter category

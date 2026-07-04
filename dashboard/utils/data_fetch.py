@@ -6,119 +6,154 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy import text # type:ignore
 from ml.features import get_snowflake_engine
+from api.db.connection import get_store_connection, release_connection
+import yaml
 
 STORE_TIMEZONE = ZoneInfo("America/Chicago")
 
 
-def get_production_plan(store_id):
+# --- MENU CONFIG --
+with open("config/menu.yaml") as f:
+    menu = yaml.safe_load(f)
 
-    # 1. Get Snowflake connection
-    engine = get_snowflake_engine()
+category_by_item = {item["id"]: item["category"] for item in menu["items"]}
+cost_by_item = {item["id"]: item["cost"] for item in menu["items"]}
+hold_time_by_item = {item["id"]: item["hold_time"] for item in menu["items"]}
 
-    # 2. Get slot_index
-    # datetime.now() is UTC on hosted runners (e.g. Streamlit Community
-    # Cloud), which doesn't match store local time, so convert explicitly.
-    now = datetime.now(STORE_TIMEZONE)
+
+def get_sim_now(store_id):
+    conn = get_store_connection(store_id)
+    query = "select max(created_at) from sales_events"
+    now_df = pd.read_sql(query, conn)
+    release_connection(conn)
+    now = now_df.iloc[0, 0]
+    return now
+
+def get_today_start(now):
+    today_start = now.replace(
+        hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    return today_start
+
+
+def get_production_plan(store_id, now, today_start):
+
+    # Get Snowflake connection
+    sf_engine = get_snowflake_engine()
+    neon_engine = get_store_connection(store_id)
+
     # Snowflake's day_of_week (EXTRACT(DAYOFWEEK ...)) is Sunday=0..Saturday=6,
     # while Python's weekday() is Monday=0..Sunday=6 -- convert to match.
     day_of_week = (now.weekday() + 1) % 7
+
+    # Calculate slot_index
     slot_index = (day_of_week * 96) + (now.hour * 4) + (now.minute // 15)
 
-    # 3. Join PREDICTIONS with MART_STOCKOUT_SUMMARY and MENU_ITEMS
-    # We use a LEFT JOIN because we want to see the plan even if there are 0 stockouts
-    # Live data has stopped flowing (Neon down), so MART_STOCKOUT_SUMMARY is a
-    # frozen historical snapshot -- match today's day-of-week/hour instead of
-    # just the latest date, so the numbers stay representative of "now".
+    windows = [
+        (item_id, (slot_index + offset) % 672)
+        for item_id, hold_time in hold_time_by_item.items()
+        for offset in range(int(hold_time * 4))
+    ]
+
+    windows_df = pd.DataFrame(windows, columns=["item_id", "slot_index"])
+
+    # Join PREDICTIONS with MENU_ITEMS
     query = text("""
-        with menu as (
-            select *
-            from PUBLIC.MENU_ITEMS
-        ),
-
-        current_stockouts as (
-            select
-                item_id,
-                total_missed_units
-            from MARTS.MART_STOCKOUT_SUMMARY
-            where store_id = :store_id
-            and stockout_date = (
-                select max(stockout_date) from MARTS.MART_STOCKOUT_SUMMARY
-                where store_id = :store_id
-                and extract(dayofweek from stockout_date) = :day_of_week
-            )
-            and stockout_hour = (
-                select max(stockout_hour) from MARTS.MART_STOCKOUT_SUMMARY
-                where store_id = :store_id
-                and extract(dayofweek from stockout_date) = :day_of_week
-                and stockout_hour <= :hour
-            )
-        ),
-
-        predictions as (
-            select
-                store_id,
-                item_id,
-                slot_index,
-                predicted_units
-            from MARTS.PREDICTIONS
-            where store_id = :store_id
-            and slot_index = :slot_index
-        )
-
         select
-            p.item_id,
-            p.predicted_units,
-            m.category,
-            coalesce(s.total_missed_units, 0) as missed_units
-
-        from predictions p
-        left join current_stockouts s
-            on p.item_id = s.item_id
-        left join menu m
-            on m.item_id = p.item_id
+            store_id,
+            item_id,
+            slot_index,
+            predicted_units
+        from MARTS.PREDICTIONS
+        where store_id = :store_id
     """)
 
-    # 4. Return a DataFrame
-    df = pd.read_sql(query, engine, params={"store_id": store_id,
-                                            "slot_index": slot_index,
-                                            "day_of_week": day_of_week,
-                                            "hour": now.hour})
-    df.columns = df.columns.str.lower()
+    # Return a DataFrame
+    predictions_df = pd.read_sql(query, sf_engine, params={"store_id": store_id})
+
+    # Lowercase + add predicted_for column
+    predictions_df.columns = predictions_df.columns.str.lower()
+    predictions_df = predictions_df.drop(columns=["store_id"])
+
+    # Merge windows and predictions to get the correct windows
+    predictions_df = predictions_df.merge(windows_df,
+                        on=["item_id", "slot_index"], how="inner")
+
+    # Group by sum
+    predictions_df = predictions_df.groupby("item_id")["predicted_units"].sum()
+    predictions_df = predictions_df.reset_index()
+
+    # Now query Neon for stockouts
+    query = ("""
+        select
+            item_id,
+            sum(quantity_requested) as missed_units
+        from stockout_events
+        where created_at >= %(today_start)s
+        group by item_id
+    """)
+
+    df_stockouts = pd.read_sql(query, neon_engine, params={"today_start":
+                                                             today_start})
+
+    release_connection(neon_engine)
+
+    # Merge two Data Frames
+    df = predictions_df.merge(df_stockouts, on="item_id", how="left")
+    df["missed_units"] = df["missed_units"].fillna(0).astype(int)
+
     df.attrs["predicted_for"] = now
+    df["category"] = df["item_id"].map(category_by_item)
 
     return df
 
 
-def get_waste_summary(store_id):
+def get_waste_summary(store_id, now, today_start):
 
-    # 1. Get Snowflake Connection
-    engine = get_snowflake_engine()
+    # Get Neon Connection
+    engine = get_store_connection(store_id)
 
-    # 2. Queries MARTS.MART_WASTE_PERCENTAGE for the most recent date matching
-    # today's day-of-week (data is a frozen historical snapshot while Neon is
-    # down, so this keeps the numbers representative of "now" rather than
-    # whichever day happened to be extracted last)
-    now = datetime.now(STORE_TIMEZONE)
-    day_of_week = (now.weekday() + 1) % 7
+    query = ("""
+        with today_sales as (
+            select
+                item_id,
+                sum(quantity) as sale_quantity,
+                sum(quantity * price) as sale_revenue
+            from sales_events
+            where created_at >= %(today_start)s
+            group by item_id
+        ),
 
-    query = text("""
-        select
-            category,
-            waste_cost,
-            sale_quantity,
-            sale_revenue
+        today_waste as (
+            select
+                item_id,
+                sum(quantity) as waste_quantity
+            from waste_log
+            where created_at >= %(today_start)s
+            group by item_id
+        ),
 
-        from MARTS.MART_WASTE_PERCENTAGE
-        where store_id = :store_id
-        and waste_date = (
-            select max(waste_date) from KS_DB.MARTS.MART_WASTE_PERCENTAGE
-            where store_id = :store_id
-            and extract(dayofweek from waste_date) = :day_of_week
+        final as (
+            select
+                coalesce(s.item_id, w.item_id) as item_id,
+                coalesce(sale_quantity, 0) as sale_quantity,
+                coalesce(sale_revenue, 0) as sale_revenue,
+                coalesce(waste_quantity, 0) as waste_quantity
+            from today_sales s
+            full outer join today_waste w
+            on s.item_id = w.item_id
         )
+
+        select * from final
     """)
 
-    # 3. Return a DataFrame with area, category, waste_cost, and sale_revenue
-    df = pd.read_sql(query, engine, params={"store_id": store_id,
-                                            "day_of_week": day_of_week})
+    # Return a DataFrame with area, category, waste_cost, and sale_revenue
+    df = pd.read_sql(query, engine, params={"today_start": today_start})
+
+    release_connection(engine)
+
+    # Add category and waste costs mapped from dictionaries from menu config
+    df["category"] = df["item_id"].map(category_by_item)
+    df["cost"] = df["item_id"].map(cost_by_item)
+    df["waste_cost"] = df["waste_quantity"] * df["cost"]
 
     return df

@@ -14,7 +14,8 @@ from streamlit_autorefresh import st_autorefresh # type:ignore
 from dashboard.components.store_selector import store_selector
 from dashboard.components.production_plan import production_plan
 from dashboard.components.waste_summary import waste_summary
-from dashboard.utils.data_fetch import get_production_plan, get_waste_summary
+from dashboard.utils.data_fetch import \
+    get_production_plan, get_waste_summary, get_sim_now, get_today_start
 
 # --- LIVE REFRESH ---
 # Refresh every 5 minutes since the pos simulator extracts to Snowflake every
@@ -25,9 +26,11 @@ st.set_page_config(page_title="KitchenSync Dashboard", layout="wide")
 st.title('KitchenSync Production Plan')
 
 store_id = store_selector()
-df = get_production_plan(store_id)
+now = get_sim_now(store_id)
+today_start = get_today_start(now)
+df = get_production_plan(store_id, now, today_start)
 st.caption(f"Predicting for: {df.attrs['predicted_for'].strftime('%A %I:%M %p %Z')}")
 production_plan(df)
 
-df_waste = get_waste_summary(store_id)
+df_waste = get_waste_summary(store_id, now, today_start)
 waste_summary(df_waste)
