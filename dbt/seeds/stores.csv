@@ -1,0 +1,13 @@
+store_id,name,region,level,hours,active
+store_012,Store 012,West Wisconsin,4,24/7,True
+store_027,Store 027,West Wisconsin,2,5am-11pm,True
+store_034,Store 034,West Wisconsin,3,24/7,True
+store_056,Store 056,South Wisconsin,4,24/7,True
+store_061,Store 061,South Wisconsin,1,5am-11pm,True
+store_078,Store 078,South Wisconsin,3,5am-11pm,True
+store_091,Store 091,Minnesota,4,24/7,True
+store_103,Store 103,Minnesota,2,5am-11pm,True
+store_115,Store 115,Minnesota,3,24/7,True
+store_128,Store 128,Iowa,1,5am-11pm,True
+store_134,Store 134,Iowa,2,5am-11pm,True
+store_147,Store 147,Iowa,4,24/7,True
