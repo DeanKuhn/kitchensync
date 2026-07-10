@@ -41,9 +41,9 @@ def get_production_plan(store_id, now, today_start):
     sf_engine = get_snowflake_engine()
     neon_engine = get_store_connection(store_id)
 
-    # Snowflake's day_of_week (EXTRACT(DAYOFWEEK ...)) is Sunday=0..Saturday=6,
-    # while Python's weekday() is Monday=0..Sunday=6 -- convert to match.
-    day_of_week = (now.weekday() + 1) % 7
+    # slot_index day-blocks use 0=Monday..6=Sunday (dayofweekiso - 1 in dbt),
+    # matching Python's weekday() -- no conversion needed.
+    day_of_week = now.weekday()
 
     # Calculate slot_index
     slot_index = (day_of_week * 96) + (now.hour * 4) + (now.minute // 15)

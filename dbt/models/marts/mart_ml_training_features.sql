@@ -37,7 +37,7 @@ spine as (
     from profile p
     inner join store_dates sd
         on  p.store_id                     = sd.store_id
-        and extract(dayofweek from sd.sale_date) = p.day_of_week
+        and dayofweekiso(sd.sale_date) - 1 = p.day_of_week
 
 ),
 

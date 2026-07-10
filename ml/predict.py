@@ -101,7 +101,7 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
     df_warm['store_id'] = store_encoder.transform(df_warm['store_id'])
     df_warm['item_id'] = item_encoder.transform(df_warm['item_id'])
 
-    df_warm['is_weekend'] = df_warm['day_of_week'].isin([0, 6]).astype(int)
+    df_warm['is_weekend'] = df_warm['day_of_week'].isin([5, 6]).astype(int)
 
     X = df_warm[FEATURE_COLS]
 

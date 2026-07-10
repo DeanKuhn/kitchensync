@@ -78,8 +78,8 @@ def load_features():
     # Make columns lowercase so they're easier to work with
     df.columns = df.columns.str.lower()
 
-    # Adds new column: 1 if Saturday or Sunday, 0 else
-    df['is_weekend'] = df['day_of_week'].isin([0, 6]).astype(int)
+    # Adds new column: 1 if Saturday or Sunday, 0 else (0=Monday..6=Sunday)
+    df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
 
 
     return df

@@ -327,7 +327,7 @@ uv run dbt test --project-dir dbt
 | `sale_minute` | `int_sales__time_of_day_profile` |
 | `slot_index` | `int_sales__time_of_day_profile` |
 | `day_of_week` | `int_sales__time_of_day_profile` |
-| `is_weekend` | Derived (`day_of_week` in [0, 6]) |
+| `is_weekend` | Derived (`day_of_week` in [5, 6]) |
 | `avg_slot_quantity` | `int_sales__time_of_day_profile` |
 | `sample_size` | `int_sales__time_of_day_profile` |
 | `store_id` (encoded) | Store dimension |
