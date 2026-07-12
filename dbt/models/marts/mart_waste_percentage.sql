@@ -15,7 +15,6 @@ with waste as (
 
 ),
 
-
 sales as (
 
     select
@@ -33,7 +32,6 @@ sales as (
 
 ),
 
-
 menu as (
 
     select
@@ -45,7 +43,6 @@ menu as (
     from {{ ref('menu_items') }}
 
 ),
-
 
 final as (
     select
@@ -69,20 +66,4 @@ final as (
 
 )
 
-
 select * from final
-
-
-/*
-
---- DATA TRANSFORMATION VISUALIZATION ---
-
-STEP 1: Aggregated Sales & Waste (by store/item)
-ITEM_ID | TOTAL_SOLD | TOTAL_WASTED
-BURGER  | 100        | 5
-
-STEP 2: final (The Efficiency KPI)
-ITEM_ID | TOTAL_PRODUCED | WASTE_PCT
-BURGER  | 105            | 4.76%
-
-*/

@@ -4,13 +4,11 @@ with profile as (
 
 ),
 
-
 menu as (
 
     select * from {{ ref('menu_items') }}
 
 ),
-
 
 final as (
 
@@ -25,6 +23,7 @@ final as (
     inner join menu m on p.item_id = m.item_id
 
     group by
+        -- important to group by category to get category average
         category,
         day_of_week,
         sale_hour,
@@ -32,20 +31,4 @@ final as (
 
 )
 
-
 select * from final
-
-
-/*
-
---- DATA TRANSFORMATION VISUALIZATION ---
-
-STEP 1: item_profile (Detailed averages per item)
-ITEM_ID | DAY_OF_WEEK | HOUR | SLOT_INDEX | AVG_SLOT_QUANTITY
-BURGER  | 1 (Mon)     | 12   | 3          | 2.8
-
-STEP 2: final (Category-level averages for "Cold Starts")
-CATEGORY | DAY | HOUR | SLOT_INDEX | AVG_CATEGORY_QTY
-SANDWICH | 1   | 12   | 3          | 8.5 (Average of all sandwiches)
-
-*/

@@ -4,13 +4,11 @@ with rolling as (
 
 ),
 
-
 profile as (
 
     select * from {{ ref('int_sales__time_of_day_profile') }}
 
 ),
-
 
 final as (
 
@@ -40,25 +38,4 @@ final as (
 
 )
 
-
 select * from final
-
-
-/*
-
---- DATA TRANSFORMATION VISUALIZATION ---
-
-STEP 1: rolling (The "Now" data - current 15-min performance)
-STORE_ID | ITEM_ID | SLOT_INDEX | SLOT_QUANTITY
-store_01 | BURGER  | 49         | 3
-
-STEP 2: profile (The "Historical" data - avg demand for this slot)
-STORE_ID | ITEM_ID | SLOT_INDEX | AVG_SLOT_QUANTITY   | SAMPLE_SIZE
-store_01 | BURGER  | 49         | 2.8                 | 42
-
-STEP 3: final (The 15-min Feature Store for ML)
-STORE_ID | ITEM_ID | SLOT_INDEX | SLOT_QUANTITY | AVG_SLOT_QUANTITY
-store_01 | BURGER  | 49         | 3             | 2.8
-(QUALIFY keeps only the most recent slot per store/item)
-
-*/

@@ -1,11 +1,12 @@
+-- === BUCKET BEGIN ===
+
 with sales as (
 
     select * from {{ ref('stg_sales_events') }}
 
 ),
 
-
-slotly as (
+fifteen_min as (
 
     select
         store_id,
@@ -28,6 +29,10 @@ slotly as (
 
 ),
 
+-- === BUCKET DONE ===
+
+-- int_sales__rolling_features_15min is
+-- event-level history compressed to slot-grain
 
 rolling as (
 
@@ -40,9 +45,8 @@ rolling as (
         day_of_week,
         slot_quantity
 
-    from slotly
+    from fifteen_min
 
 )
-
 
 select * from rolling

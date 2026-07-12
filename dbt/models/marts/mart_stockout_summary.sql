@@ -4,7 +4,6 @@ with stockouts as (
 
 ),
 
-
 final as (
 
     select
@@ -27,21 +26,4 @@ final as (
 
 )
 
-
 select * from final
-
-
-/*
-
---- DATA TRANSFORMATION VISUALIZATION ---
-
-STEP 1: stg_stockout_events (Granular Events)
-ITEM_ID | STOCKOUT_HOUR | QTY_REQUESTED
-BURGER  | 12            | 2
-BURGER  | 12            | 3
-
-STEP 2: mart_stockout_summary (Hourly Aggregation)
-ITEM_ID | STOCKOUT_HOUR | TOTAL_MISSED_UNITS | EVENT_COUNT
-BURGER  | 12            | 5                  | 2
-
-*/
