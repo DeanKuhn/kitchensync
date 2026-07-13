@@ -15,6 +15,7 @@ with waste as (
 
 ),
 
+
 sales as (
 
     select
@@ -32,6 +33,7 @@ sales as (
 
 ),
 
+
 menu as (
 
     select
@@ -43,6 +45,7 @@ menu as (
     from {{ ref('menu_items') }}
 
 ),
+
 
 final as (
     select
@@ -57,13 +60,16 @@ final as (
             as waste_percentage
 
     from waste w
+
     inner join sales s
     on w.store_id = s.store_id
     and w.item_id = s.item_id
     and w.waste_date = s.sale_date
+
     inner join menu m
     on w.item_id = m.item_id
 
 )
+
 
 select * from final

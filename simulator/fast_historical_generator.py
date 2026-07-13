@@ -77,7 +77,7 @@ for store in stores["stores"]:
     try:
         # Accumulate the ENTIRE 6-week run for this store in memory, so we
         # only round-trip to Neon once (via execute_values below) instead of
-        # once per day.
+        # once per day
         store_sales_batch = []
 
         for day_data in SIMULATION_DAYS:

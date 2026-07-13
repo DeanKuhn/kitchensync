@@ -4,11 +4,13 @@ with profile as (
 
 ),
 
+
 rolling as (
 
     select * from {{ ref('int_sales__rolling_features_15min') }}
 
 ),
+
 
 store_dates as (
 
@@ -16,6 +18,7 @@ store_dates as (
     from {{ ref('stg_sales_events') }}
 
 ),
+
 
 -- active (store, item, slot) combinations joined to all matching dates,
 -- starting from the profile means we only generate rows for slots where
@@ -42,6 +45,7 @@ spine as (
 
 ),
 
+
 final as (
 
     select
@@ -64,5 +68,6 @@ final as (
         and s.slot_index = r.slot_index
 
 )
+
 
 select * from final

@@ -4,13 +4,15 @@ with profile as (
 
 ),
 
+
 menu as (
 
     select * from {{ ref('menu_items') }}
 
 ),
 
-final as (
+final
+ as (
 
     select
         p.day_of_week,
@@ -30,5 +32,6 @@ final as (
         slot_index
 
 )
+
 
 select * from final

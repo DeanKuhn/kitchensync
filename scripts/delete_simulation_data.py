@@ -2,7 +2,6 @@
 # a certain date forward
 
 
-import os
 import yaml # type:ignore
 from sqlalchemy import text # type:ignore
 from dotenv import load_dotenv # type:ignore
@@ -12,7 +11,7 @@ from ml.features import get_snowflake_engine
 
 load_dotenv()
 
-CUTOFF = "2025-01-01"
+CUTOFF = "2027-01-01"   # High in case of accidental run
 
 with open("config/stores.yaml", "r") as f:
     stores = yaml.safe_load(f)

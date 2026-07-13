@@ -4,6 +4,7 @@ with stockouts as (
 
 ),
 
+
 final as (
 
     select
@@ -25,5 +26,6 @@ final as (
         day_of_week
 
 )
+
 
 select * from final

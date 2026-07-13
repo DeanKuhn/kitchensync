@@ -6,6 +6,7 @@ with sales as (
 
 ),
 
+
 fifteen_min as (
 
     select
@@ -31,9 +32,9 @@ fifteen_min as (
 
 -- === BUCKET DONE ===
 
+
 -- int_sales__rolling_features_15min is
 -- event-level history compressed to slot-grain
-
 rolling as (
 
     select

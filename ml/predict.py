@@ -9,7 +9,7 @@ from ml.features import get_snowflake_engine
 import ml.features as features
 from simulator.pos_simulator import HOURS_AVAILABLE
 
-COLD_START_THRESHOLD = 4
+ESTABLISHED_DAYS_THRESHOLD = 14
 FEATURE_COLS = features.FEATURE_COLS
 
 
@@ -43,7 +43,30 @@ def get_all_store_items():
     # Cross-join, creating a grid with all stores and all items
     grid = stores_df.merge(df, on="key").drop(columns="key")
 
-    return grid
+
+    # Build full spine: all store × item × slot_index combinations
+    slot_df = pd.DataFrame({'slot_index': range(672)})
+    full_grid = grid.merge(slot_df, how='cross')
+
+    # Drop slot/item combos outside the item's time_of_day window
+    full_grid['hour'] = (full_grid['slot_index'] % 96) // 4
+
+    full_grid['window_start'] = full_grid['time_of_day'].map(
+        lambda t: HOURS_AVAILABLE[t][0])
+
+    full_grid['window_end'] = full_grid['time_of_day'].map(
+        lambda t: HOURS_AVAILABLE[t][1])
+
+    in_window = (full_grid['hour'] >= full_grid['window_start']) & \
+        (full_grid['hour'] < full_grid['window_end'])
+
+    not_yet_added = pd.to_datetime(full_grid['added']).dt.date > \
+        pd.Timestamp.now().date()
+
+    full_grid = full_grid[in_window & ~not_yet_added].drop(
+        columns=['hour', 'window_start', 'window_end', 'time_of_day', 'added'])
+
+    return full_grid
 
 
 def get_slot_features():
@@ -59,7 +82,8 @@ def get_slot_features():
             p.slot_index,
             p.avg_slot_quantity,
             p.sample_size,
-            m.category
+            m.category,
+            p.days_observed
 
         from INTERMEDIATE.INT_SALES__TIME_OF_DAY_PROFILE p
         inner join PUBLIC.MENU_ITEMS m
@@ -83,10 +107,29 @@ def get_cold_start_profiles():
     return df
 
 
-def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
+def get_mart_store_traffic_ratio():
 
-    df_warm = df[df['sample_size'] >= COLD_START_THRESHOLD]
-    df_cold = df[~df.index.isin(df_warm.index)]
+    engine = get_snowflake_engine()
+    query = "select * from MARTS.MART_STORE_TRAFFIC_RATIO"
+
+    df = pd.read_sql(query, engine)
+    df.columns = df.columns.str.lower()
+
+    return df
+
+
+def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder):
+
+    established = df['days_observed'] >= ESTABLISHED_DAYS_THRESHOLD
+    in_profile = df['sample_size'] > 0
+
+    print(f"Warm rows: {(established & in_profile).sum()}")
+    print(f"Zero rows: {(established & ~in_profile).sum()}")
+    print(f"Cold rows: {(~established).sum()}")
+
+    df_warm = df[established & in_profile].copy()
+    df_zero = df[established & ~in_profile].copy()
+    df_cold = df[~established].copy()
 
     # Route items unseen during training to cold-start
     known_items = set(item_encoder.classes_)
@@ -113,6 +156,11 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
     df_warm['item_id'] = item_encoder.inverse_transform(df_warm['item_id'])
 
 
+    #   --- ZERO MODEL ---
+
+    df_zero['predicted_units'] = 0.0
+
+
     #   --- COLD MODEL ---
 
     # Merge both dataframes on category
@@ -122,11 +170,17 @@ def predict(df, df_cold_start, lgbm, store_encoder, item_encoder):
     df_cold = df_cold.merge(df_cold_start[['category', 'slot_index', 'category_avg']],
                             on=['category', 'slot_index'])
 
-    df_cold['predicted_units'] = df_cold['category_avg']
+    # Merge on traffic ratio
+    df_cold = df_cold.merge(df_ratio[['store_id', 'traffic_ratio']],
+                            on='store_id', how='left')
 
+    # Predict units based on category average and store traffic ratio
+    df_cold['predicted_units'] = df_cold['category_avg'] * df_cold['traffic_ratio']
 
     # Recombine and return
-    combined_df = pd.concat([df_warm, df_cold])
+    combined_df = pd.concat([df_warm, df_zero, df_cold])
+    assert len(combined_df) == len(df), \
+        f"Row count changed in routing: {len(df)} in, {len(combined_df)} out"
 
     return combined_df[['store_id', 'item_id', 'predicted_units', 'slot_index']]
 
@@ -138,47 +192,25 @@ if __name__ == "__main__":
     store_encoder = joblib.load("ml/models/store_encoder.joblib")
     item_encoder = joblib.load("ml/models/item_encoder.joblib")
 
+    # Obtain full grid of slot_index and items per each store
+    # Tuned to each store's opening and closing hours
     print("Loading items per store...")
     grid = get_all_store_items()
 
     print("Loading current conditions from Snowflake...")
     df_features = get_slot_features()
 
-    # Build full spine: all store × item × slot_index combinations
-    slot_df = pd.DataFrame({'slot_index': range(672)})
-    full_grid = grid.merge(slot_df, how='cross')
-
-    # Drop slot/item combos outside the item's time_of_day window (and items
-    # not yet added) - these can never have real sales, so leaving them in
-    # lets the cold-start category average leak nonzero values from other
-    # items in the same category with a different window (see decision #18).
-
-    full_grid['hour'] = (full_grid['slot_index'] % 96) // 4
-
-    full_grid['window_start'] = full_grid['time_of_day'].map(
-        lambda t: HOURS_AVAILABLE[t][0])
-
-    full_grid['window_end'] = full_grid['time_of_day'].map(
-        lambda t: HOURS_AVAILABLE[t][1])
-
-    in_window = (full_grid['hour'] >= full_grid['window_start']) & \
-        (full_grid['hour'] < full_grid['window_end'])
-
-    not_yet_added = pd.to_datetime(full_grid['added']).dt.date > \
-        pd.Timestamp.now().date()
-
-    full_grid = full_grid[in_window & ~not_yet_added].drop(
-        columns=['hour', 'window_start', 'window_end', 'time_of_day', 'added'])
-
     # Left-join profile features onto full spine
-    df = full_grid.merge(df_features, on=["store_id", "item_id", "slot_index"], how="left")
+    df = grid.merge(df_features, on=["store_id", "item_id", "slot_index"], how="left")
 
     # Derive time features from slot_index for rows missing from profile
     df['day_of_week'] = df['day_of_week'].fillna(df['slot_index'] // 96).astype(int)
     df['sale_hour']   = df['sale_hour'].fillna((df['slot_index'] % 96) // 4).astype(int)
     df['sale_minute'] = df['sale_minute'].fillna((df['slot_index'] % 4) * 15).astype(int)
     df['avg_slot_quantity'] = df['avg_slot_quantity'].fillna(0)
-    df['sample_size'] = df['sample_size'].fillna(0)
+    df['sample_size'] = df['sample_size'].fillna(0).astype(int)
+    df['days_observed'] = df.groupby(['store_id', 'item_id'])['days_observed'].transform('max')
+    df['days_observed'] = df['days_observed'].fillna(0).astype(int)
 
     # Create a new column, category, with no null values
     df['category'] = df['category_y'].fillna(df['category_x'])
@@ -186,23 +218,20 @@ if __name__ == "__main__":
 
     print("Loading cold start data from Snowflake...")
     df_cold_start = get_cold_start_profiles()
+    df_ratio = get_mart_store_traffic_ratio()
 
-
-    print(f"Warm rows: {len(df[df['sample_size'] >= COLD_START_THRESHOLD])}")
-    print(f"Cold rows: {len(df[df['sample_size'] < COLD_START_THRESHOLD])}")
-    print(f"NULL category rows: {df['category'].isna().sum()}")
 
     print(f"Running inference for {len(df)} store/item combinations...")
     production_plan = \
-        predict(df, df_cold_start, lgbm, store_encoder, item_encoder)
+        predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder)
 
     # Get Snowflake engine created in features.py
     engine = get_snowflake_engine()
 
-    # Add timestamp, and make sure to append so previous predictions can be
-    # observed and learned from
+    # Add timestamp and replace previous predictions
     production_plan['predicted_at'] = pd.Timestamp.now()
-    production_plan.to_sql('predictions', engine, if_exists='replace', index=False, chunksize=10000)
+    production_plan.to_sql('predictions', engine, if_exists='replace',
+                           index=False, chunksize=10000)
 
     print("\n--- PRODUCTION PLAN SUMMARY ---")
     print(f"Total predictions written : {len(production_plan)}")

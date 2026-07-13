@@ -4,6 +4,7 @@ with sales as (
 
 ),
 
+
 totals as (
 
     select
@@ -15,6 +16,7 @@ totals as (
     group by store_id
 
 ),
+
 
 final as (
 
@@ -28,5 +30,6 @@ final as (
     from totals
 
 )
+
 
 select * from final

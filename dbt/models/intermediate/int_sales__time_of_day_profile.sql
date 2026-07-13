@@ -6,6 +6,7 @@ with sales as (
 
 ),
 
+
 fifteen_min as (
 
     select
@@ -31,6 +32,7 @@ fifteen_min as (
 
 -- === BUCKET DONE ===
 
+
 -- int_sales__time_of_day_profile is cross-date average,
 -- computing avg_slot_quantity and sample_size
 
@@ -50,6 +52,7 @@ total_days as (
 
 ),
 
+
 -- total distinct sales dates per item and store
 distinct_sales as (
 
@@ -64,6 +67,7 @@ distinct_sales as (
         store_id,
         item_id
 ),
+
 
 -- profile, all data summed up
 profile as (

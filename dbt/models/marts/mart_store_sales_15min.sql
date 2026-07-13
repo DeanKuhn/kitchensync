@@ -4,11 +4,13 @@ with rolling as (
 
 ),
 
+
 profile as (
 
     select * from {{ ref('int_sales__time_of_day_profile') }}
 
 ),
+
 
 final as (
 
@@ -24,6 +26,7 @@ final as (
         p.sample_size
 
     from rolling r
+
     left join profile p
         on r.store_id       = p.store_id
         and r.item_id       = p.item_id
@@ -37,5 +40,6 @@ final as (
     ) = 1
 
 )
+
 
 select * from final

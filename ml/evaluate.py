@@ -17,16 +17,13 @@ def load_test_data(se, ie):
     # Load features of dataframe
     df = load_features()
 
-
     # Use joblib encoders to transform columns
     df['store_id'] = se.transform(df['store_id'])
     df['item_id'] = ie.transform(df['item_id'])
 
-
     # Chronological split, same as training
     df_sorted = df.sort_values('sale_date').reset_index(drop=True)
     split_idx = int(len(df_sorted) * 0.8)
-
 
     # Define features and target
     X = df_sorted.drop(columns=['hourly_quantity', 'sale_date'])
@@ -35,7 +32,6 @@ def load_test_data(se, ie):
     X_test = X.iloc[split_idx:]
     y_test = y.iloc[split_idx:]
     test_avg_hour_quantity = X_test['avg_hourly_quantity']
-
 
     return X_test, y_test, test_avg_hour_quantity
 

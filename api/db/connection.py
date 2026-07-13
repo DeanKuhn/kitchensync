@@ -8,14 +8,7 @@ database_url = os.getenv("NEON_DATABASE_URL")
 if not database_url:
     raise ValueError("NEON_DATABASE_URL is not set in the .env file.")
 
-# Connection pool reduces API overhead
-# maxconn=50: FastAPI's sync route handlers run in Starlette's threadpool
-# (default ~40 threads), so bursts up to ~40 concurrent requests are possible
-# even without a code bug -- e.g. all 12 simulated stores crossing a 15-min
-# slot boundary on the same tick. A cap of 10 raised PoolError under a
-# measured 91-request burst on 2026-06-13 and 2026-07-07. 50 gives headroom
-# above the threadpool ceiling; raise further if Neon's connection limit allows
-# and bursts still exceed it.
+# Connection pool reduces API overhead, raised from 10 to 50
 connection_pool = pool.SimpleConnectionPool(1, 50, database_url)
 
 

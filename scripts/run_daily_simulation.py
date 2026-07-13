@@ -140,10 +140,6 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
             demand = int(round(sum(predictions.get(
                 (store_id, (global_slot + i) % 672, item["id"]), 0)
                 for i in range(look_ahead))))
-                # look_ahead = int(item["hold_time"])
-                # demand = int(round(sum(predictions.get(
-                #     (store_id, day_of_week, i % 24, item["id"]), 0)
-                #     for i in range(look_ahead))))
 
             if demand > 0:
                 expires = seed_datetime + timedelta(hours=item["hold_time"])
@@ -166,8 +162,6 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
         # --- PRODUCTION LOGIC ---
         is_rush = RUSH_CURVE[hour] >= 0.6
         fires = is_rush or slot_idx % 4 == 0
-        # fires = (mode == "baseline" and slot_idx % 4 == 0) or \
-        #         (mode == "ml" and (is_rush or slot_idx % 4 == 0))
 
         if fires:
             for item in menu["items"]:
@@ -190,12 +184,6 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                     demand = sum(predictions.get(
                         (store_id, (global_slot + i) % 672, item["id"]), 0)
                         for i in range(look_ahead))
-
-                    # look_ahead = int(item["hold_time"])
-                    # demand = sum(predictions.get(
-                    #     (store_id, (day_of_week + (hour + i) // 24) % 7,
-                    #      (hour + i) % 24, item["id"]), 0)
-                    #     for i in range(look_ahead))
 
                 committed = (state.get_total_quantity(item["id"]) +
                             state.get_in_progress_quantity(item["id"]))
@@ -256,23 +244,6 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                 metrics["units_wasted"] += b["quantity"]
                 metrics["waste_cost"] += b["quantity"] * menu_lookup[item_id]["cost"]
                 waste_by_item[item_id] = waste_by_item.get(item_id, 0) + b["quantity"]
-
-    # --- DEBUG BREAKDOWN ---
-    # waste_by_tod = {}
-    # cooked_by_tod = {}
-    # for item_id, qty in waste_by_item.items():
-    #     tod = menu_lookup[item_id]["time_of_day"]
-    #     waste_by_tod[tod] = waste_by_tod.get(tod, 0) + qty
-    # for item_id, qty in cooked_by_item.items():
-    #     tod = menu_lookup[item_id]["time_of_day"]
-    #     cooked_by_tod[tod] = cooked_by_tod.get(tod, 0) + qty
-
-    # print(f"\n[DEBUG][{mode.upper()}][{store_id}] sold={metrics['units_sold']} "
-    #       f"wasted={metrics['units_wasted']} cooked={sum(cooked_by_item.values())}")
-    # print(f"  Waste by time_of_day: {waste_by_tod}")
-    # print(f"  Cooked by time_of_day: {cooked_by_tod}")
-    # top_wasted = sorted(waste_by_item.items(), key=lambda x: x[1], reverse=True)[:5]
-    # print(f"  Top 5 wasted items: {top_wasted}")
 
     return metrics
 
