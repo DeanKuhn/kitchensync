@@ -1,11 +1,12 @@
-# imports
+import os
 import pandas as pd
-from sqlalchemy import text # type:ignore
+from sqlalchemy import create_engine, text # type:ignore
 import yaml # type:ignore
 import random
 from datetime import datetime, timedelta
 import numpy as np
 import json
+from dotenv import load_dotenv # type:ignore
 
 
 # shared constraints pulled from pos_simulator
@@ -18,7 +19,12 @@ from simulator.pos_simulator import (
 )
 
 from simulator.pos_simulator import StoreState
-from ml.features import get_snowflake_engine
+
+load_dotenv()
+
+
+def get_neon_engine():
+    return create_engine(os.getenv("NEON_DATABASE_URL"))
 
 
 # --- LOAD CONFIGS ---
@@ -37,20 +43,18 @@ for item in menu["items"]:
 
 def load_ml_predictions():
 
-    # Load ML model predictions from Snowflake
-    engine = get_snowflake_engine()
+    engine = get_neon_engine()
 
     try:
-        print("[SIMULATOR] Loading 15-min ML production targets from Snowflake...")
+        print("[SIMULATOR] Loading 15-min ML production targets from Neon...")
         query = text("""
             SELECT store_id, slot_index, item_id, predicted_units
-            FROM MARTS.PREDICTIONS
+            FROM public.predictions
         """)
 
         df = pd.read_sql(query, engine)
         df.columns = df.columns.str.lower()
 
-        # Return dict keyed by (store_id, slot_index, item_id)
         ml_production_targets = {}
         for _, row in df.iterrows():
             key = (
@@ -70,20 +74,18 @@ def load_ml_predictions():
 
 def load_baseline_predictions():
 
-    # Load baseline model predictions from Snowflake
-    engine = get_snowflake_engine()
+    engine = get_neon_engine()
 
     try:
-        print("[SIMULATOR] Loading slot-level baseline production targets from Snowflake...")
+        print("[SIMULATOR] Loading slot-level baseline production targets from Neon...")
         query = text("""
             SELECT store_id, item_id, slot_index, avg_slot_quantity
-            FROM INTERMEDIATE.INT_SALES__TIME_OF_DAY_PROFILE
+            FROM public.baseline_profile
         """)
 
         df = pd.read_sql(query, engine)
         df.columns = df.columns.str.lower()
 
-        # Return dict keyed by (store_id, slot_index, item_id)
         base_production_targets = {}
         for _, row in df.iterrows():
             key = (
@@ -312,11 +314,8 @@ def compute_cumulative(daily):
 
 def main():
 
-    # Load prediction dictionaries
     ml_predictions = load_ml_predictions()
     baseline_predictions = load_baseline_predictions()
-
-    # Set seed_date
     seed_date = datetime.now()
 
     # Diagnostic: compare total estimated demand for the simulation day
@@ -333,14 +332,10 @@ def main():
     print(f"\nML demand estimate (day):       {ml_total:.1f}")
     print(f"Baseline demand estimate (day): {base_total:.1f}\n")
 
-    # Call simulate_day twice, storing results
     ml_totals = simulate_day(ml_predictions, seed_date, mode="ml")
     baseline_totals = simulate_day(baseline_predictions, seed_date, mode="baseline")
 
-    # Load existing results
     data = load_ab_results("data/ab_results.json")
-
-    # Build today's entry dict and append to data["daily"]
     entry_dict = {
         "date": seed_date.strftime("%Y-%m-%d"),
         "ml": ml_totals,
@@ -349,10 +344,7 @@ def main():
 
     data["daily"].append(entry_dict)
 
-    # Recompute cumulative
     data["cumulative"] = compute_cumulative(data["daily"])
-
-    # Save
     save_ab_results("data/ab_results.json", data)
 
 

@@ -1,11 +1,11 @@
-# Pulls latest predictions from Snowflake/Postgres
+# Pulls latest predictions and live metrics from Postgres (Neon)
 
 
+import os
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from sqlalchemy import text # type:ignore
-from ml.features import get_snowflake_engine
+from sqlalchemy import create_engine, text # type:ignore
 from api.db.connection import get_store_connection, release_connection
 import yaml
 
@@ -35,10 +35,15 @@ def get_today_start(now):
     return today_start
 
 
+def get_neon_engine():
+    # api.db.connection already loads NEON_DATABASE_URL from .env as a
+    # side effect of import
+    return create_engine(os.getenv("NEON_DATABASE_URL"))
+
+
 def get_production_plan(store_id, now, today_start):
 
-    # Get Snowflake connection
-    sf_engine = get_snowflake_engine()
+    predictions_engine = get_neon_engine()
     neon_engine = get_store_connection(store_id)
 
     # slot_index day-blocks use 0=Monday..6=Sunday (dayofweekiso - 1 in dbt),
@@ -56,19 +61,19 @@ def get_production_plan(store_id, now, today_start):
 
     windows_df = pd.DataFrame(windows, columns=["item_id", "slot_index"])
 
-    # Join PREDICTIONS with MENU_ITEMS
+    # Join predictions with MENU_ITEMS
     query = text("""
         select
             store_id,
             item_id,
             slot_index,
             predicted_units
-        from MARTS.PREDICTIONS
+        from public.predictions
         where store_id = :store_id
     """)
 
     # Return a DataFrame
-    predictions_df = pd.read_sql(query, sf_engine, params={"store_id": store_id})
+    predictions_df = pd.read_sql(query, predictions_engine, params={"store_id": store_id})
 
     # Lowercase + add predicted_for column
     predictions_df.columns = predictions_df.columns.str.lower()

@@ -1,3 +1,4 @@
+import os
 import asyncio
 import httpx
 import yaml # type:ignore
@@ -5,9 +6,14 @@ import random
 import numpy as np
 from datetime import datetime, timedelta
 import pandas as pd
-from sqlalchemy import text # type:ignore
+from sqlalchemy import create_engine, text # type:ignore
+from dotenv import load_dotenv # type:ignore
 
-from ml.features import get_snowflake_engine
+load_dotenv()
+
+
+def get_neon_engine():
+    return create_engine(os.getenv("NEON_DATABASE_URL"))
 
 # --- LOAD CONFIGS ---
 with open("config/stores.yaml") as f:
@@ -60,14 +66,22 @@ def get_start_time():
 
     fallback = datetime(2026, 7, 1, 0, 0, 0)
     try:
-        engine = get_snowflake_engine()
-        result = pd.read_sql(
-            text("SELECT MAX(created_at) FROM RAW.SALES_EVENTS"), engine)
-        value = result.iloc[0, 0]
-        if value is None:
-            print("[SIMULATOR] Snowflake empty, using fallback start time.")
+        from api.db.connection import get_store_connection, release_connection
+
+        max_created_at = None
+        for store in stores["stores"]:
+            conn = get_store_connection(store["id"])
+            result = pd.read_sql(
+                "SELECT MAX(created_at) FROM sales_events", conn)
+            release_connection(conn)
+            value = result.iloc[0, 0]
+            if value is not None and (max_created_at is None or value > max_created_at):
+                max_created_at = value
+
+        if max_created_at is None:
+            print("[SIMULATOR] Neon empty, using fallback start time.")
             return fallback
-        start = pd.Timestamp(value).to_pydatetime()
+        start = pd.Timestamp(max_created_at).to_pydatetime()
         print(f"[SIMULATOR] Resuming simulation from {start}")
         return start
 
@@ -208,17 +222,17 @@ async def fire_stockout(client, store_id, item_id, quantity_requested, sim_now):
 async def refresh_targets_task():
 
     while True:
-        # Reloads MARTS.PREDICTIONS every 24h (see asyncio.sleep below) —
+        # Reloads predictions every 24h (see asyncio.sleep below) —
         # not a one-time load
 
-        engine = get_snowflake_engine()
+        engine = get_neon_engine()
         global production_targets
 
         try:
-            print("[SIMULATOR] Loading 15-min production targets from Snowflake...")
+            print("[SIMULATOR] Loading 15-min production targets from Neon...")
             query = text("""
                 SELECT store_id, slot_index, item_id, predicted_units
-                FROM MARTS.PREDICTIONS
+                FROM public.predictions
             """)
 
             loop = asyncio.get_event_loop()

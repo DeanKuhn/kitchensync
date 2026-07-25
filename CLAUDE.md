@@ -6,11 +6,13 @@ This file is the authoritative reference for Claude Code. Read it in full before
 
 ## Project Overview
 
-A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). The system ingests real-time simulated POS (point-of-sale) events, stores them in a Postgres-backed transactional database, transforms them through a dbt pipeline into a Snowflake analytics warehouse, and feeds a LightGBM forecasting model that produces per-store, per-item production plans at 15-minute slot grain. A Streamlit dashboard surfaces results for kitchen staff, split into Kitchen and Chicken production queues.
+A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). The system ingests real-time simulated POS (point-of-sale) events, stores them in a Postgres-backed transactional database (Neon), and feeds a LightGBM forecasting model that produces per-store, per-item production plans at 15-minute slot grain. A Streamlit dashboard surfaces results for kitchen staff, split into Kitchen and Chicken production queues.
 
 An A/B comparison pipeline runs nightly on AWS EC2, comparing the ML system against a naive hourly-average baseline. Results are written to `data/ab_results.json`, committed to GitHub, and consumed by a static Astro portfolio site that updates automatically each morning.
 
-This project exists to demonstrate: robust data pipeline engineering, scalable multi-store architecture, modern analytics stack (dbt + Snowflake), ML model accuracy with real-time adaptation, and automated cloud deployment.
+**Snowflake is off the nightly/live hot path as of 2026-07-25** (design decision #20) — cost-driven migration. `MARTS.PREDICTIONS` is exported to a Neon table (`public.predictions`) and the dbt `int_sales__time_of_day_profile` baseline logic is replicated directly against Neon nightly (`scripts/build_baseline_profile.py` → `public.baseline_profile`). The dashboard, simulator, and A/B pipeline all read from Neon only. Snowflake stays suspended (not dropped) and is resumed manually only for retraining — see the retrain playbook below.
+
+This project exists to demonstrate: robust data pipeline engineering, scalable multi-store architecture, a modern analytics stack (dbt + Snowflake, used for training), ML model accuracy with real-time adaptation, and automated cloud deployment on a cost-conscious footprint.
 
 ---
 
@@ -22,51 +24,38 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
                                                               ▼
                                                      [Neon (Postgres)]
                                                      Per-store schemas
+                                              + shared public.predictions
+                                              + shared public.baseline_profile
                                                               │
                                               [Nightly cron — 2am UTC]
-                                              extract_to_snowflake.py
-                                                              │
-                                                              ▼
-                                               [Snowflake — KS_DB.RAW]
-                                         RAW.SALES_EVENTS + RAW.WASTE_LOG
-                                                    + RAW.STOCKOUT_EVENTS
-                                                              │
-                                                     [dbt Core pipeline]
+                                          scripts/build_baseline_profile.py
+                                    (ports dbt's time_of_day_profile logic to Neon SQL,
+                                     rebuilds public.baseline_profile from raw sales_events)
                                                               │
                                           ┌───────────────────┴───────────────────┐
                                           ▼                                       ▼
-                                    KS_DB.STAGING                      KS_DB.INTERMEDIATE
-                                  stg_sales_events              int_sales__rolling_features_15min
-                                   stg_waste_log               int_sales__time_of_day_profile
-                                 stg_stockout_events
-                                                                                  │
-                                                                                  ▼
-                                                                          KS_DB.MARTS
-                                                                      mart_store_sales_15min
-                                                                     mart_cold_start_profile
-                                                                      mart_waste_percentage
-                                                                      mart_stockout_summary
-                                                                     mart_ml_training_features
-                                                                                  │
-                                                                         [ML Pipeline]
-                                                                    ml/train.py (LightGBM)
-                                                          ml/predict.py → MARTS.PREDICTIONS
-                                                              (up to 12 stores
-                                                               × 45 active items × 672 slots)
-                                                                                  │
-                                                       ┌──────────────────────────┴──────────────────────────┐
-                                                       ▼                                                     ▼
-                                           [Streamlit Dashboard]                          [A/B Comparison — run_daily_simulation.py]
-                                  Split Kitchen / Chicken production queues                ML (15-min grain) vs Baseline (hourly avg)
-                                  Current 15-min slot | 5-min auto-refresh                     In-memory, seeded by date
-                                       Missed Demand + Waste Summary                                        │
-                                                                                                            ▼
-                                                                                               data/ab_results.json
-                                                                                                            │
-                                                                                           git commit + push (GitHub Actions)
-                                                                                                            │
-                                                                                               [Astro Portfolio Site]
-                                                                                          Daily ML vs Baseline metrics display
+                              [Streamlit Dashboard]                  [A/B Comparison — run_daily_simulation.py]
+                     Split Kitchen / Chicken production queues        ML (public.predictions) vs Baseline
+                     Current 15-min slot | 5-min auto-refresh          (public.baseline_profile), seeded by date
+                          Missed Demand + Waste Summary                                    │
+                     Reads public.predictions + live Neon stockout/waste                   ▼
+                                                                                data/ab_results.json
+                                                                                             │
+                                                                                git commit + push
+                                                                                             │
+                                                                                [Astro Portfolio Site]
+                                                                           Daily ML vs Baseline metrics display
+
+
+  ── Manual retrain path (Snowflake resumed on demand, suspended otherwise) ──
+
+  extract_to_snowflake.py → dbt run → ml.train / ml.predict → MARTS.PREDICTIONS
+                                                                       │
+                                                    export_predictions_to_neon.py
+                                                                       │
+                                                                       ▼
+                                                          public.predictions (Neon)
+                                                     [KS_WH suspended again after]
 ```
 
 ---
@@ -78,8 +67,8 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 | Language | Python 3.12+ |
 | Ingest API | FastAPI |
 | POS Simulation | Python (async/httpx, Poisson arrivals, FIFO batch management) |
-| Transactional DB | Neon (cloud Postgres) — per-store schemas |
-| Analytics Warehouse | Snowflake |
+| Transactional DB | Neon (cloud Postgres) — per-store schemas, plus shared `public.predictions` / `public.baseline_profile` tables |
+| Analytics Warehouse | Snowflake — suspended by default, resumed manually only for retraining (see decision #20) |
 | Transformation | dbt Core |
 | ML — Baseline | Hourly average (in-memory, no model) |
 | ML — Production | LightGBM |
@@ -170,14 +159,19 @@ kitchensync/
 │   │   ├── production_plan.py # Split Kitchen/Chicken queues, session state checkboxes
 │   │   └── store_selector.py
 │   └── utils/
-│       └── data_fetch.py      # get_production_plan(), get_waste_summary() — predictions
-│                                # from Snowflake, stockout/waste queried live from Neon
+│       └── data_fetch.py      # get_production_plan(), get_waste_summary() — all reads
+│                                # from Neon (public.predictions + live per-store tables)
 │
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema + table creation
 │   ├── extract_to_snowflake.py # Incremental (per-store watermark on created_at): Neon → KS_DB.RAW
-│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push (no train step)
+│   ├── run_pipeline.py        # Nightly cron: build_baseline_profile → A/B → git push (no Snowflake)
+│   ├── build_baseline_profile.py # Neon-native port of dbt's int_sales__time_of_day_profile;
+│   │                              # rebuilds public.baseline_profile from raw sales_events nightly
+│   ├── export_predictions_to_neon.py # Snowflake MARTS.PREDICTIONS → Neon public.predictions;
+│   │                              # run once and again after every manual retrain
 │   ├── run_daily_simulation.py # A/B comparison — ML vs baseline, outputs data/ab_results.json
+│   │                              # (reads public.predictions + public.baseline_profile from Neon)
 │   ├── delete_simulation_data.py # Wipes simulation data from BOTH Neon (delete_neon) and
 │   │                              # Snowflake RAW (delete_snowflake) — run delete_snowflake alone
 │   │                              # if Neon already has data you want to keep (e.g. a fresh reseed)
@@ -197,18 +191,34 @@ kitchensync/
 - All 12 store schemas in Neon with `sales_events`, `waste_log`, `stockout_events` tables
 - FastAPI ingest API with three endpoints: `/sales`, `/waste`, `/stockout`
 - Historical data generator (`historical_generator.py` / `fast_historical_generator.py`) — 6-week window, Poisson-based, sale-day aware; `START_DATE` is a constant at the top of the file, updated whenever the window is regenerated
-- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding (rounded to a whole unit), 24-hour prediction reload
-- Snowflake: `KS_DB`, `KS_WH`, `RAW.SALES_EVENTS`, `RAW.WASTE_LOG`, `RAW.STOCKOUT_EVENTS`
-- Full dbt pipeline: staging → intermediate → marts (all models live, 15-min slot grain)
-- LightGBM model trained, predictions (12 stores × 45 active items × 672 slots, minus off-window slots filtered per item's `time_of_day`) written to `MARTS.PREDICTIONS` — retrain via `python -m ml.train` then `python -m ml.predict` (no wrapper script; `run_training.py` no longer exists)
-- Cold-start fallback via `mart_cold_start_profile` (category-level averages by slot_index, threshold = 4 samples)
-- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot (anchored to Neon's own clock via `get_sim_now()`, not wall-clock, since the sim clock can drift from real time), missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table, deployed live at [kitchensync.streamlit.app](https://kitchensync.streamlit.app) (Streamlit Community Cloud). Stockout/waste numbers are queried live from Neon (not the nightly Snowflake snapshot) as of the 2026-07-04/05 live-dashboard update; predictions still come from `MARTS.PREDICTIONS`.
-- A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results.json`
+- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding (rounded to a whole unit), 24-hour prediction reload (from Neon `public.predictions` as of 2026-07-25)
+- Snowflake: `KS_DB`, `KS_WH`, `RAW.SALES_EVENTS`, `RAW.WASTE_LOG`, `RAW.STOCKOUT_EVENTS` — **suspended by default as of 2026-07-25**, resumed manually only for retraining (decision #20)
+- Full dbt pipeline: staging → intermediate → marts (all models still defined and used during manual retrains; no longer run nightly)
+- LightGBM model trained, predictions (12 stores × 45 active items × 672 slots, minus off-window slots filtered per item's `time_of_day`) written to `MARTS.PREDICTIONS` — retrain via `python -m ml.train` then `python -m ml.predict`, then `python scripts/export_predictions_to_neon.py` to push the refreshed table to Neon (see retrain playbook below; no wrapper script; `run_training.py` no longer exists)
+- Cold-start fallback via `mart_cold_start_profile` (category-level averages by slot_index, threshold = 4 samples) — computed during manual retrains only
+- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot (anchored to Neon's own clock via `get_sim_now()`, not wall-clock, since the sim clock can drift from real time), missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table, deployed live at [kitchensync.streamlit.app](https://kitchensync.streamlit.app) (Streamlit Community Cloud). All dashboard reads — stockout/waste (live) and predictions — come from Neon as of 2026-07-25; no Snowflake dependency remains in `dashboard/utils/data_fetch.py`.
+- A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results.json`; both prediction sources (`public.predictions`, `public.baseline_profile`) read from Neon
 - AWS EC2 deployment: API + simulator as systemd services (auto-restart on crash/reboot)
-- Nightly cron pipeline: `git pull` → extract → dbt → predict → A/B comparison → git push (retraining is run manually); commit step guards against "nothing to commit" so a no-op day doesn't fail the whole run
+- Nightly cron pipeline: single crontab line on EC2 (`crontab -l`), no separate systemd timer —
+  ```
+  0 2 * * * cd /home/ubuntu/kitchensync && git pull --rebase origin master && PYTHONPATH=. /home/ubuntu/.local/bin/uv run python scripts/run_pipeline.py >> logs/pipeline.log 2>&1
+  ```
+  which runs `build_baseline_profile.py` → A/B comparison → git push (no Snowflake step; retraining is a separate manual playbook, see below); commit step guards against "nothing to commit" so a no-op day doesn't fail the whole run. **Consolidated 2026-07-25**: the crontab previously had a commented-out `run_pipeline.py` line and a separate *active* line that called `run_daily_simulation.py` directly (bypassing `run_pipeline.py`, and — before the Neon migration — still querying Snowflake nightly even with `extract`/`dbt`/`predict` skipped). Both were replaced with the single line above.
 - Portfolio site integration: `ab_results.json` committed to GitHub nightly, consumed by Astro static site
-- Snowflake auth: RSA key pair (`~/.ssh/snowflake_rsa.p8`), registered via `ALTER USER`
+- Snowflake auth: RSA key pair (`~/.ssh/snowflake_rsa.p8`), registered via `ALTER USER` — still used for the manual retrain playbook
 - Two production-logic bugs found and fixed (2026-07-01/02) — see design decisions #18 and #19 below
+- Snowflake removed from the nightly/live hot path (2026-07-25) — see design decision #20 and the retrain playbook below
+
+### Manual Retrain Playbook (Snowflake, on demand)
+
+Snowflake stays suspended except when manually retraining the model:
+
+1. Resume `KS_WH` in Snowflake (`ALTER WAREHOUSE KS_WH RESUME;` or via the Snowflake UI)
+2. `PYTHONPATH=. uv run python scripts/extract_to_snowflake.py` — incremental watermark catches up all Neon activity since the last extract
+3. `uv run dbt run --project-dir dbt` — rebuilds all marts, including `MART_ML_TRAINING_FEATURES`
+4. `PYTHONPATH=. uv run python -m ml.train` then `PYTHONPATH=. uv run python -m ml.predict` — refreshes `MARTS.PREDICTIONS` in Snowflake
+5. `PYTHONPATH=. uv run python scripts/export_predictions_to_neon.py` — pushes the new table to Neon, where the dashboard and A/B sim actually read from
+6. `ALTER WAREHOUSE KS_WH SUSPEND;` — suspend again
 
 ---
 
@@ -351,7 +361,7 @@ Reads all slots from `INT_SALES__TIME_OF_DAY_PROFILE`, runs warm (LightGBM) or c
 ### Key Parameters
 - `TIME_SCALE = 20` — 1 real second = 20 simulated seconds
 - `TICK_INTERVAL = 1` — real seconds per tick
-- `START_TIME` — determined at startup by `get_start_time()`: queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` in Snowflake and resumes from that timestamp; falls back to `datetime(2026, 7, 1, 0, 0, 0)` if Snowflake is empty (update this fallback whenever the historical seed window is regenerated with a new `START_DATE`)
+- `START_TIME` — determined at startup by `get_start_time()`: queries `MAX(created_at)` across each Neon store schema's `sales_events` table directly (repointed from Snowflake `RAW.SALES_EVENTS` on 2026-07-25, since RAW no longer updates nightly) and resumes from the latest timestamp found; falls back to `datetime(2026, 7, 1, 0, 0, 0)` if Neon is empty (update this fallback whenever the historical seed window is regenerated with a new `START_DATE`)
 
 ### Production Logic
 - Fires when `slot_idx != last_slot_idx and (is_rush or slot_idx % 4 == 0)`, where `is_rush = RUSH_CURVE[hour] >= 0.6`
@@ -366,8 +376,7 @@ Reads all slots from `INT_SALES__TIME_OF_DAY_PROFILE`, runs warm (LightGBM) or c
 On `StoreState` init, inventory is pre-seeded with the predicted units for the current slot per item (respecting `time_of_day` availability), **rounded to a whole number** (`predicted_units` from `MARTS.PREDICTIONS` is an unrounded float — every other cook-quantity code path rounds explicitly, and this one must too, or fractional quantities propagate through `consume()`/waste logging for the life of that batch; see design decision #19). Prevents stockout cascade before first slot boundary fires.
 
 ### Background Tasks
-- `refresh_targets_task()` — loads `MARTS.PREDICTIONS` at startup and reloads every 24h (`asyncio.sleep(86400)`), not a one-time load
-- `refresh_pipeline_task()` — runs extract + dbt every 300 seconds during simulation (no predict, no train)
+- `refresh_targets_task()` — loads predictions from Neon `public.predictions` at startup and reloads every 24h (`asyncio.sleep(86400)`), not a one-time load. Repointed from Snowflake `MARTS.PREDICTIONS` on 2026-07-25.
 
 ### Running the Simulator
 ```bash
@@ -521,11 +530,12 @@ NUM_STORES=12
 9. **Config-file-driven menu** — items toggled without code changes; cold-start logic handles new items
 10. **Slot-boundary production logic** — cook decisions fire once per 15-min boundary, not every tick; look-ahead window = `hold_time * 4` slots
 11. **No minimum-batch floor for cook quantities** *(superseded 2026-06-14, commit `ccf1577`)* — an earlier version scaled a minimum cook quantity by hourly traffic (`batch_size * 2 * RUSH_CURVE[hour]`) to avoid under-production during rush. This was deliberately removed: a floor forces low-traffic stores to overproduce relative to their genuinely thin demand, which is worse than the alternative. Current logic (`cook_qty = int(np.ceil(gap)) if gap > 1 else 0`) has no floor, only rounding.
-12. **Retraining is manual** — cron runs extract → dbt → predict → A/B nightly but does not retrain the model. Retraining is triggered manually after significant data accumulation via `python -m ml.train` then `python -m ml.predict` (no wrapper script). The model is committed to git (`ml/models/lgbm.joblib`) so EC2 can pull a new model without running training on the t3.micro (which OOMs)
+12. **Retraining is manual** — cron runs `build_baseline_profile → A/B` nightly (Snowflake steps removed 2026-07-25, see decision #20) but never retrains the model. Retraining is triggered manually after significant data accumulation via the retrain playbook (`extract_to_snowflake.py` → `dbt run` → `ml.train` → `ml.predict` → `export_predictions_to_neon.py`, see Current State section). The model is committed to git (`ml/models/lgbm.joblib`) so EC2 can pull a new model without running training on the t3.micro (which OOMs)
 13. **A/B baseline never writes to Neon** — baseline system is purely in-memory metrics; only ML system generates training data; prevents baseline behavior from corrupting the model's learning signal
 14. **Honest A/B finding** — ML achieves +1.6pp better service level (97.6% vs 96.1%) and ~40% fewer stockout events, at the cost of +3.3pp more waste (8.6% vs 5.3%); root cause is the ML system's production checks firing ~4x more often (every 15-min slot boundary vs. baseline's hourly), each subject to the same `ceil()`-driven ~1-unit rounding tax described in decision #11 — not a batch floor (there isn't one); a production system would need a cost function to balance the trade-off
 15. **Conditional mean bias fix (2026-06-13)** — `int_sales__time_of_day_profile` originally averaged only over days with non-zero sales, making `avg_slot_quantity` a conditional mean (E[X|X>0]) instead of the true expected demand. For low-traffic stores this inflated predictions 3–4x. Fixed by computing `SUM(quantity) / total_dates` where `total_dates` counts all observed days for that store/day_of_week, including zero-sale days.
-16. **Simulator restart resume** — `get_start_time()` queries `SELECT MAX(created_at) FROM RAW.SALES_EVENTS` at startup and uses that as `START_TIME`, so the simulation clock resumes from the last extracted timestamp rather than re-generating already-seen events. Falls back to a hardcoded date if Snowflake is empty — keep this fallback in sync with `START_DATE` in the historical generator whenever the seed window is regenerated. A small gap of un-extracted Neon events may be re-simulated after a restart, but the watermark on the extract blocks true duplicates from entering Snowflake.
+16. **Simulator restart resume** *(query source superseded 2026-07-25, see decision #20)* — `get_start_time()` queries `MAX(created_at)` at startup and uses that as `START_TIME`, so the simulation clock resumes from the latest observed event rather than re-generating already-seen events. Originally queried Snowflake `RAW.SALES_EVENTS`; now queries Neon's per-store `sales_events` tables directly, since `RAW` no longer updates nightly. Falls back to a hardcoded date if empty — keep this fallback in sync with `START_DATE` in the historical generator whenever the seed window is regenerated.
 17. **Snowflake RSA key path via env var** — `SNOWFLAKE_PRIVATE_KEY_PATH` defaults to `~/.ssh/snowflake_rsa.p8` if not set. Avoids hardcoding the EC2-specific absolute path and makes the Docker setup portable. Used in `ml/features.py` (SQLAlchemy engine) and `scripts/extract_to_snowflake.py` (connector).
 18. **Production time-of-day gate must be OR, not AND (fixed 2026-07-02)** — `pos_simulator.py`'s per-item cook-decision skip check was written as `if (not item["active"] and item["added"] <= date and hour not in range(...)): continue`. Since `not item["active"]` is `False` for every real menu item, the whole `and`-chain collapsed to `False` and `continue` never fired — off-window items (e.g. chicken, available only 9am–10pm) got cook orders computed 24/7, with zero matching demand outside their window. This produced chronic overproduction concentrated at low-traffic stores (waste % inversely correlated with store traffic level: ~88% at level-1 stores vs. ~17% at level-4). Fixed to `if (not item["active"]) or (item["added"] > date) or (hour not in range(...)): continue` — an OR of the three skip-conditions, matching the (already-correct) positive filter used on the sales-generation side of the same file. `historical_generator.py` and `run_daily_simulation.py` were both already correct and unaffected.
 19. **Startup-seeded inventory must be rounded (fixed 2026-07-02)** — `StoreState` startup seeding used the raw `predicted_units` sum from `MARTS.PREDICTIONS` directly as a batch `quantity`, without rounding. `predicted_units` is stored as an unrounded float; every other cook-quantity code path explicitly rounds (`int(np.ceil(gap))`), but this one didn't. Since `consume()` only subtracts whole-number sale quantities from a batch, the fractional remainder persisted through the batch's lifecycle and showed up as a fractional quantity in waste logs too, if the batch expired before selling out. Fixed with `seed_demand = round(seed_demand)`. Self-limiting even before the fix: seeding only runs once at simulator startup, so the fractional contamination fully flushes out (sold or wasted) within one `hold_time` window and never recurs.
+20. **Snowflake removed from the nightly/live hot path (2026-07-25)** — cost-driven: Snowflake compute became unsustainable, and Neon was separately approaching its monthly compute-hour cap. The original idea (copy `MARTS.PREDICTIONS` to an EC2-local DB) didn't hold up: (a) the dashboard reads `MARTS.PREDICTIONS` directly too, not just the A/B script; (b) the A/B baseline needs `INT_SALES__TIME_OF_DAY_PROFILE` in addition to `PREDICTIONS`; (c) Streamlit Community Cloud cannot reach an EC2-local database without exposing a public port, so both tables had to land somewhere both the dashboard and EC2 can already reach — Neon. Landed as: `scripts/build_baseline_profile.py` ports the `int_sales__time_of_day_profile` SQL logic (including the decision #15 conditional-mean fix) to run directly against Neon's per-store schemas nightly, replacing dbt for that one model; `scripts/export_predictions_to_neon.py` does a one-time (and retrain-time) export of `MARTS.PREDICTIONS` into Neon `public.predictions`. `run_daily_simulation.py`, `dashboard/utils/data_fetch.py`, and `pos_simulator.py` (`get_start_time()`, `refresh_targets_task()`) were repointed from Snowflake to these two Neon tables. `run_pipeline.py`'s nightly chain simplified from `extract → dbt → predict → A/B → push` to `build_baseline_profile → A/B → push`. Snowflake itself is suspended (`ALTER WAREHOUSE KS_WH SUSPEND;`), not dropped, and is resumed only for the manual retrain playbook (see Current State section). Net effect: predictions and the baseline profile no longer freeze between retrains — the baseline keeps updating nightly from fresh Neon data, only the LightGBM model itself is static between manual retrains (unchanged from decision #12).

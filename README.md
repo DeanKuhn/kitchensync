@@ -1,6 +1,8 @@
 # KitchenSync
 
-A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). KitchenSync ingests real-time simulated POS events, transforms them through a dbt + Snowflake analytics pipeline, and feeds a LightGBM forecasting model that produces per-store, per-item food production plans at 15-minute slot grain. A Streamlit dashboard surfaces the results for kitchen staff — split into separate Kitchen and Chicken production queues, refreshed every 5 minutes.
+A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). KitchenSync ingests real-time simulated POS events into a Postgres (Neon) transactional layer, and feeds a LightGBM forecasting model that produces per-store, per-item food production plans at 15-minute slot grain. A Streamlit dashboard surfaces the results for kitchen staff — split into separate Kitchen and Chicken production queues, refreshed every 5 minutes.
+
+A dbt + Snowflake analytics pipeline is used for feature engineering and model training, but is off the nightly/live hot path (cost-driven decision, 2026-07-25) — Snowflake is suspended by default and resumed only for manual retrains. Live predictions and the A/B baseline are served from Neon.
 
 An A/B comparison pipeline runs nightly on AWS EC2, pitting the ML system against a naive hourly-average baseline. Results are written to `data/ab_results.json`, committed to GitHub, and consumed by a static Astro portfolio site that updates automatically each morning.
 
@@ -27,51 +29,36 @@ Built by someone who works with the real system daily.
                                                               ▼
                                                      [Neon (Postgres)]
                                                      Per-store schemas
+                                              + shared public.predictions
+                                              + shared public.baseline_profile
                                                               │
                                               [Nightly cron — 2am UTC]
-                                              extract_to_snowflake.py
-                                                              │
-                                                              ▼
-                                               [Snowflake — KS_DB.RAW]
-                                         RAW.SALES_EVENTS + RAW.WASTE_LOG
-                                                    + RAW.STOCKOUT_EVENTS
-                                                              │
-                                                     [dbt Core pipeline]
+                                          scripts/build_baseline_profile.py
+                                    (ports dbt's time_of_day_profile logic to Neon SQL)
                                                               │
                                           ┌───────────────────┴───────────────────┐
                                           ▼                                       ▼
-                                    KS_DB.STAGING                      KS_DB.INTERMEDIATE
-                                  stg_sales_events              int_sales__rolling_features_15min
-                                   stg_waste_log               int_sales__time_of_day_profile
-                                 stg_stockout_events
-                                                                                  │
-                                                                                  ▼
-                                                                          KS_DB.MARTS
-                                                                      mart_store_sales_15min
-                                                                     mart_cold_start_profile
-                                                                      mart_waste_percentage
-                                                                      mart_stockout_summary
-                                                                     mart_ml_training_features
-                                                                                  │
-                                                                         [ML Pipeline]
-                                                                    ml/train.py (LightGBM)
-                                                          ml/predict.py → MARTS.PREDICTIONS
-                                                              (up to 12 stores
-                                                               × 45 active items × 672 slots)
-                                                                                  │
-                                                       ┌──────────────────────────┴──────────────────────────┐
-                                                       ▼                                                     ▼
-                                           [Streamlit Dashboard]                          [A/B Comparison — run_daily_simulation.py]
-                                  Split Kitchen / Chicken production queues                ML (15-min grain) vs Baseline (hourly avg)
-                                  Current 15-min slot | 5-min auto-refresh                     In-memory, seeded by date
-                                       Missed Demand + Waste Summary                                        │
-                                                                                                            ▼
-                                                                                               data/ab_results.json
-                                                                                                            │
-                                                                                           git commit + push (GitHub Actions)
-                                                                                                            │
-                                                                                               [Astro Portfolio Site]
-                                                                                          Daily ML vs Baseline metrics display
+                              [Streamlit Dashboard]                  [A/B Comparison — run_daily_simulation.py]
+                     Split Kitchen / Chicken production queues        ML (public.predictions) vs Baseline
+                     Current 15-min slot | 5-min auto-refresh          (public.baseline_profile), seeded by date
+                          Missed Demand + Waste Summary                                    │
+                                                                                             ▼
+                                                                                data/ab_results.json
+                                                                                             │
+                                                                                git commit + push (GitHub Actions)
+                                                                                             │
+                                                                                [Astro Portfolio Site]
+                                                                           Daily ML vs Baseline metrics display
+
+
+  ── Manual retrain path (Snowflake resumed on demand, suspended otherwise) ──
+
+  extract_to_snowflake.py → dbt run → ml.train / ml.predict → MARTS.PREDICTIONS
+                                                                       │
+                                                    export_predictions_to_neon.py
+                                                                       │
+                                                                       ▼
+                                                          public.predictions (Neon)
 ```
 
 ---
@@ -83,8 +70,8 @@ Built by someone who works with the real system daily.
 | Language | Python 3.12+ |
 | Ingest API | FastAPI |
 | POS Simulation | Python (async/httpx, Poisson arrivals, FIFO batch management) |
-| Transactional DB | Neon (cloud Postgres) — per-store schemas |
-| Analytics Warehouse | Snowflake |
+| Transactional DB | Neon (cloud Postgres) — per-store schemas + shared prediction/baseline tables |
+| Analytics Warehouse | Snowflake — suspended by default, resumed manually only for retraining |
 | Transformations | dbt Core |
 | ML — Baseline | Hourly average (in-memory, no model) |
 | ML — Production | LightGBM |
@@ -215,8 +202,10 @@ kitchensync/
 │   └── utils/data_fetch.py    # get_production_plan() (Snowflake), get_waste_summary() (live Neon)
 ├── scripts/
 │   ├── init_db.py             # One-time Neon schema creation
-│   ├── extract_to_snowflake.py   # Incremental (per-store watermark on created_at)
-│   ├── run_pipeline.py        # Nightly cron: extract → dbt → predict → A/B → git push (no train)
+│   ├── extract_to_snowflake.py   # Incremental (per-store watermark on created_at) — retrain playbook only
+│   ├── build_baseline_profile.py # Neon-native port of dbt's int_sales__time_of_day_profile
+│   ├── export_predictions_to_neon.py # Snowflake MARTS.PREDICTIONS → Neon public.predictions
+│   ├── run_pipeline.py        # Nightly cron: build_baseline_profile → A/B → git push (no Snowflake)
 │   ├── run_daily_simulation.py   # A/B comparison — ML vs baseline, outputs ab_results.json
 │   └── delete_simulation_data.py # Wipes simulation data from Neon and/or Snowflake RAW
 ├── Dockerfile                 # FastAPI ingest service (production uses EC2 + systemd)
@@ -314,7 +303,12 @@ Results are written to `data/ab_results.json`. Run this after retraining (`pytho
 The live system runs on AWS EC2:
 
 - **API** and **simulator** run as systemd services (auto-restart on crash or reboot)
-- **Nightly cron (2am UTC):** extract → dbt → predict → A/B comparison → git push (model retraining is run manually after significant data accumulation)
+- **Nightly cron (2am UTC)**, single crontab entry on EC2:
+  ```
+  0 2 * * * cd /home/ubuntu/kitchensync && git pull --rebase origin master && PYTHONPATH=. /home/ubuntu/.local/bin/uv run python scripts/run_pipeline.py >> logs/pipeline.log 2>&1
+  ```
+  runs `build_baseline_profile.py` → A/B comparison → `git push` (no Snowflake step; model retraining is a separate manual playbook — see `CLAUDE.md`)
+- Snowflake is suspended by default; resumed only for manual retrains
 - **GitHub Actions** triggers the Astro portfolio site to rebuild after each push of `ab_results.json`
 
 Systemd service files are in `deploy/` (not committed — contain credentials).

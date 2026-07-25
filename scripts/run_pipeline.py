@@ -1,5 +1,8 @@
-# Daily pipeline: extract → dbt → predict → A/B simulation → ab_results.json
+# Daily pipeline: baseline profile → A/B simulation → ab_results.json
 # Run manually or via kitchensync-pipeline.timer (systemd).
+# Snowflake removed from the nightly path (2026-07) — predictions and the
+# baseline profile are read from Neon. See CLAUDE.md retrain playbook for
+# the manual Snowflake steps used to refresh MARTS.PREDICTIONS.
 
 
 import subprocess
@@ -20,14 +23,8 @@ def main():
     start = datetime.now()
     print(f"[PIPELINE] Starting at {start.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    run("PYTHONPATH=. uv run python scripts/extract_to_snowflake.py",
-        "Extract Neon → Snowflake RAW")
-
-    run("uv run dbt run --project-dir dbt",
-        "dbt: RAW → STAGING → INTERMEDIATE → MARTS")
-
-    run("PYTHONPATH=. uv run python -m ml.predict",
-        "Predict: refresh MARTS.PREDICTIONS")
+    run("PYTHONPATH=. uv run python scripts/build_baseline_profile.py",
+        "Build baseline profile (Neon)")
 
     run("PYTHONPATH=. uv run python scripts/run_daily_simulation.py",
         "A/B simulation → data/ab_results.json")
