@@ -8,8 +8,12 @@ database_url = os.getenv("NEON_DATABASE_URL")
 if not database_url:
     raise ValueError("NEON_DATABASE_URL is not set in the .env file.")
 
-# Connection pool reduces API overhead, raised from 10 to 50
-connection_pool = pool.SimpleConnectionPool(1, 50, database_url)
+# minconn=0 so importing this module doesn't eagerly open a connection —
+# only the dashboard and one-off scripts use this pool now that the live
+# simulator writes directly with short-lived connections (see
+# simulator/pos_simulator.py); an eagerly-opened idle connection here was
+# part of what kept Neon's compute endpoint from ever autosuspending.
+connection_pool = pool.SimpleConnectionPool(0, 50, database_url)
 
 
 def get_connection():

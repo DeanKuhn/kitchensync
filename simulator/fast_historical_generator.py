@@ -59,99 +59,104 @@ for day_idx in range(70):
     })
 
 
-for store in stores["stores"]:
+def main():
+    for store in stores["stores"]:
 
-    store_id = store["id"]
-    level = int(store["level"])
-    hours = store["hours"]
-    region = store["region"]
+        store_id = store["id"]
+        level = int(store["level"])
+        hours = store["hours"]
+        region = store["region"]
 
-    if hours == "24/7": min_max_hours = [0, 24]
-    elif hours == "5am-11pm": min_max_hours = [5, 23]
-    else:
-        print(f"Hours unknown for {store_id}, skipping.")
-        continue
+        if hours == "24/7": min_max_hours = [0, 24]
+        elif hours == "5am-11pm": min_max_hours = [5, 23]
+        else:
+            print(f"Hours unknown for {store_id}, skipping.")
+            continue
 
-    print(f"[{store_id}] Establishing transaction connection...")
-    connection = get_store_connection(store_id)
-    cursor = connection.cursor()
+        print(f"[{store_id}] Establishing transaction connection...")
+        connection = get_store_connection(store_id)
+        cursor = connection.cursor()
 
-    try:
-        store_sales_batch = []
+        try:
+            store_sales_batch = []
 
-        for day_data in SIMULATION_DAYS:
-            sim_date = day_data["date"]
-            weekday_int = day_data["int"]
-            weather = get_weather(region, sim_date)
+            for day_data in SIMULATION_DAYS:
+                sim_date = day_data["date"]
+                weekday_int = day_data["int"]
+                weather = get_weather(region, sim_date)
 
-            # Simulates random days by creating a random offset
-            random_offset = random.choices(
-                RANDOMNESS[level]["values"],
-                weights=RANDOMNESS[level]["weights"]
-            )[0]
+                # Simulates random days by creating a random offset
+                random_offset = random.choices(
+                    RANDOMNESS[level]["values"],
+                    weights=RANDOMNESS[level]["weights"]
+                )[0]
 
-            day_base_target = (BASE_VOLUME[level] + random_offset) * \
-                weather_demand_multiplier(weather)
+                day_base_target = (BASE_VOLUME[level] + random_offset) * \
+                    weather_demand_multiplier(weather)
 
-            for hour in range(min_max_hours[0], min_max_hours[1]):
+                for hour in range(min_max_hours[0], min_max_hours[1]):
 
-                event_count = max(1, round(RUSH_CURVE[hour] *
-                    WEEKDAY_MULTIPLIER[weekday_int] * day_base_target))
+                    event_count = max(1, round(RUSH_CURVE[hour] *
+                        WEEKDAY_MULTIPLIER[weekday_int] * day_base_target))
 
-                available_items = []
-                for item in menu["items"]:
-                    availability = HOURS_AVAILABLE[item["time_of_day"]]
-                    if (item["active"] and
-                            item["added"] <= sim_date and
-                            hour in range(availability[0], availability[1])):
-                        available_items.append(item)
+                    available_items = []
+                    for item in menu["items"]:
+                        availability = HOURS_AVAILABLE[item["time_of_day"]]
+                        if (item["active"] and
+                                item["added"] <= sim_date and
+                                hour in range(availability[0], availability[1])):
+                            available_items.append(item)
 
-                if not available_items:
-                    continue
+                    if not available_items:
+                        continue
 
-                popularity_weights = [
-                    i["popularity"] * weather_demand_multiplier(weather, i["category"])
-                    for i in available_items
-                ]
+                    popularity_weights = [
+                        i["popularity"] * weather_demand_multiplier(weather, i["category"])
+                        for i in available_items
+                    ]
 
-                for _ in range(event_count):
-                    item = random.choices(available_items,
-                                          weights=popularity_weights)[0]
-                    sale_days = item.get("sale_days", [])
-                    sale_price = item.get("sale_price")
+                    for _ in range(event_count):
+                        item = random.choices(available_items,
+                                              weights=popularity_weights)[0]
+                        sale_days = item.get("sale_days", [])
+                        sale_price = item.get("sale_price")
 
-                    if weekday_int in sale_days and sale_price is not None:
-                        price = item["sale_price"]
-                    else:
-                        price = item["price"]
+                        if weekday_int in sale_days and sale_price is not None:
+                            price = item["sale_price"]
+                        else:
+                            price = item["price"]
 
-                    quantity = random.choices([1, 2, 3],
-                                              weights=[0.7, 0.2, 0.1])[0]
+                        quantity = random.choices([1, 2, 3],
+                                                  weights=[0.7, 0.2, 0.1])[0]
 
-                    event_time = datetime(
-                        sim_date.year, sim_date.month, sim_date.day,
-                        hour, random.randint(0, 59), random.randint(0, 59)
-                    )
+                        event_time = datetime(
+                            sim_date.year, sim_date.month, sim_date.day,
+                            hour, random.randint(0, 59), random.randint(0, 59)
+                        )
 
-                    store_sales_batch.append(
-                        (item["id"], quantity, price, event_time))
+                        store_sales_batch.append(
+                            (item["id"], quantity, price, event_time))
 
-        # Single INSERT (large page_size to minimize round-trips) + single
-        # commit for the entire store, instead of one round-trip per day.
-        if store_sales_batch:
-            execute_values(cursor, """
-                INSERT INTO sales_events (item_id, quantity, price, created_at)
-                VALUES %s
-            """, store_sales_batch, page_size=10000)
+            # Single INSERT (large page_size to minimize round-trips) + single
+            # commit for the entire store, instead of one round-trip per day.
+            if store_sales_batch:
+                execute_values(cursor, """
+                    INSERT INTO sales_events (item_id, quantity, price, created_at)
+                    VALUES %s
+                """, store_sales_batch, page_size=10000)
 
-        connection.commit()
-        print(f"[{store_id}] Successfully persisted {len(store_sales_batch)} " \
-              "rows across 10 weeks.")
+            connection.commit()
+            print(f"[{store_id}] Successfully persisted {len(store_sales_batch)} " \
+                  "rows across 10 weeks.")
 
-    except Exception as e:
-        connection.rollback()
-        print(f"[{store_id}] FAILED: {e}")
+        except Exception as e:
+            connection.rollback()
+            print(f"[{store_id}] FAILED: {e}")
 
-    finally:
-        cursor.close()
-        release_connection(connection)
+        finally:
+            cursor.close()
+            release_connection(connection)
+
+
+if __name__ == "__main__":
+    main()

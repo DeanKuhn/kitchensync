@@ -1,6 +1,12 @@
-# KitchenSync — FastAPI Ingest Service
+# KitchenSync — Simulator / Dashboard image
 #
-# Receives POS events from the simulator and writes to Neon (Postgres).
+# Shared base image for the POS simulator and Streamlit dashboard.
+# There is no ingest API anymore (2026-08) — the simulator batches live
+# events in memory and writes directly to Neon with short-lived
+# connections every FLUSH_INTERVAL_SECONDS, instead of POSTing to a
+# FastAPI service. That service previously held a Neon connection open
+# 24/7 and, combined with the simulator's own always-on connection,
+# exhausted the Neon free tier's monthly compute-hours in about a week.
 # Production deployment uses EC2 + systemd; this image is provided for
 # containerized environments. See docker-compose.yml for the full stack.
 #
@@ -24,6 +30,6 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-EXPOSE 8000
+EXPOSE 8501
 
-CMD ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "streamlit", "run", "dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

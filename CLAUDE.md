@@ -6,20 +6,20 @@ This file is the authoritative reference for Claude Code. Read it in full before
 
 ## Project Overview
 
-A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). The system ingests real-time simulated POS (point-of-sale) events, stores them in a Postgres-backed transactional database (Neon), and feeds a LightGBM forecasting model that produces per-store, per-item production plans at 15-minute slot grain. A Streamlit dashboard surfaces results for kitchen staff, split into Kitchen and Chicken production queues.
+A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS). The system ingests real-time simulated POS (point-of-sale) events, buffers them in memory and batch-writes to a Postgres-backed transactional database (Neon) every 5 minutes (decision #18), and feeds a LightGBM forecasting model that produces per-store, per-item production plans at 15-minute slot grain. A Streamlit dashboard surfaces results for kitchen staff, split into Kitchen and Chicken production queues. An A/B comparison pipeline runs nightly on AWS EC2, comparing the ML system against a naive hourly-average baseline; results are written to `data/ab_results_v2.json`, committed to GitHub, and consumed by a static Astro portfolio site. (`data/ab_results.json` is a frozen pre-retune archive, decision #17 — don't write to it.)
 
-An A/B comparison pipeline runs nightly on AWS EC2, comparing the ML system against a naive hourly-average baseline. Results are written to `data/ab_results_v2.json`, committed to GitHub, and consumed by a static Astro portfolio site that updates automatically each morning. (`data/ab_results.json` is a frozen pre-retune archive — see decision #23.)
+Snowflake is retired entirely (decision #12). Everything — training, inference, the dashboard, the A/B pipeline — reads/writes Neon exclusively. The dbt project remains in the repo as a portfolio-only artifact (see `dbt/README.md`) demonstrating a transformation-layer approach; nothing live depends on it.
 
-**Snowflake is retired entirely as of 2026-08** (design decision #21, superseding #20's "suspend, resume for retrain" framing) — cost-driven. There is no live or manual path left that touches Snowflake. `ml/predict.py` reads/writes Neon exclusively (`public.baseline_profile`, `public.cold_start_profile`, `public.traffic_ratio`, `config/menu.yaml`, `config/stores.yaml`) and training (`ml/train.py` via `ml/features.py` → `scripts/build_training_features.py`) recomputes its feature set from Neon in-memory. The dbt project remains in the repo as a portfolio artifact only (staging → intermediate → marts, tests, macros) — see `dbt/README.md` — but nothing in the live app or retrain flow depends on it or on Snowflake.
-
-This project exists to demonstrate: robust data pipeline engineering, scalable multi-store architecture, a modern analytics stack (dbt, kept as a portfolio-only demonstration; see `dbt/README.md`), ML model accuracy with real-time adaptation, and automated cloud deployment on a cost-conscious footprint.
+This project exists to demonstrate: robust data pipeline engineering, scalable multi-store architecture, a modern analytics stack (dbt, portfolio-only), ML model accuracy with real-time adaptation, and automated cloud deployment on a cost-conscious footprint.
 
 ---
 
 ## Architecture Overview
 
 ```
-[POS Simulator — EC2 systemd] ──POST /sales, /waste, /stockout──> [FastAPI Ingest API — EC2 systemd]
+[POS Simulator — EC2 systemd]
+   buffers sales/waste/stockout in memory; every 5 min, opens one
+   short-lived connection per store and bulk-inserts (decision #18)
                                                               │
                                                               ▼
                                                      [Neon (Postgres)]
@@ -62,22 +62,17 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 | Layer | Technology |
 |---|---|
 | Language | Python 3.12+ |
-| Ingest API | FastAPI |
-| POS Simulation | Python (async/httpx, Poisson arrivals, FIFO batch management) |
-| Transactional DB | Neon (cloud Postgres) — per-store schemas, plus shared `public.predictions` / `public.baseline_profile` / `public.cold_start_profile` / `public.traffic_ratio` / `public.weather_daily` tables |
-| Analytics Warehouse | ~~Snowflake~~ — retired entirely 2026-08 (see decision #21); dbt project kept as portfolio-only, not run against live data |
-| Transformation | Neon-native Python scripts (`scripts/build_*.py`); dbt Core kept as a portfolio-only parallel implementation, not run live (see `dbt/README.md`) |
+| POS Simulation | Python (asyncio, Poisson arrivals, FIFO batch management); writes directly to Neon in 5-min batches, no ingest API (decision #18) |
+| Transactional DB | Neon (cloud Postgres) — per-store schemas, plus shared `public.predictions` / `public.baseline_profile` / `public.cold_start_profile` / `public.traffic_ratio` / `public.weather_daily` |
+| Analytics Warehouse | ~~Snowflake~~ retired; dbt kept as a portfolio-only artifact, not run against live data |
 | ML — Baseline | Hourly average (in-memory, no model) |
 | ML — Production | LightGBM |
 | Dashboard | Streamlit + streamlit-autorefresh |
 | A/B Comparison | Pure Python in-memory simulation |
 | Portfolio Site | Static Astro site, fed by ab_results_v2.json |
 | Cloud Hosting | AWS EC2 (systemd services + cron) |
-| Data formats | CSV (seed data), JSON (A/B results) |
-| Config | YAML (menu config, store config) |
+| Config | YAML (menu, stores) |
 | Package Management | uv |
-| Dev environment | WSL, VS Code, Claude Code |
-| Auth | Snowflake RSA key pair (~/.ssh/snowflake_rsa.p8) — only needed if running the portfolio-only dbt project against Snowflake; nothing in the live app uses it |
 
 ---
 
@@ -87,116 +82,69 @@ This project exists to demonstrate: robust data pipeline engineering, scalable m
 kitchensync/
 ├── CLAUDE.md
 ├── README.md
-├── Dockerfile                 # FastAPI ingest service image (production uses EC2 + systemd)
-├── docker-compose.yml         # Full stack: API + simulator + dashboard
+├── Dockerfile                 # Shared simulator/dashboard image (production uses EC2 + systemd)
+├── docker-compose.yml         # Full stack: simulator + dashboard
 ├── .env.example
-├── pyproject.toml             # uv project config (name, version, requires-python)
+├── pyproject.toml
 │
 ├── config/
-│   ├── menu.yaml              # Food items, categories, hold times, cook times, batch sizes, active flags
+│   ├── menu.yaml              # Food items, categories, hold/cook times, active flags
 │   └── stores.yaml            # 12 stores across 4 regions with traffic levels
 │
 ├── data/
-│   ├── ab_results.json        # Frozen pre-retune archive (37 days, original weak weather effect) — see decision #23
-│   ├── ab_results_v2.json     # Live nightly A/B output post-retune — tracked in git, consumed by Astro site
-│   ├── weather_impact_results.json # Output of scripts/weather_impact_analysis.py — bucketed ML-vs-baseline
-│   │                                 # gap by weather condition; manual/on-demand, not written by the nightly cron
+│   ├── ab_results.json            # Frozen pre-retune archive — never write to this (decision #17)
+│   ├── ab_results_v2.json         # Live nightly A/B output — tracked in git, consumed by Astro site
+│   ├── weather_impact_results.json # Output of scripts/weather_impact_analysis.py; manual/on-demand
 │   ├── seeds/
 │   └── exports/
 │
 ├── simulator/
-│   ├── __init__.py
-│   ├── pos_simulator.py       # Fires fake POS events to the ingest API
-│   ├── historical_generator.py # Generates synthetic events via psycopg2 batch inserts (one execute_values call per day)
-│   ├── fast_historical_generator.py # Same generator logic, but batches each store's entire
-│   │                                 # date range into a single execute_values call
-│   │                                 # (page_size=10000) instead of one per day — ~100x fewer
-│   │                                 # Neon round-trips. Prefer this for bulk (re)seeding.
+│   ├── pos_simulator.py       # Buffers sales/waste/stockout in memory, flushes to Neon every
+│   │                             5 min via short-lived connections (decision #18) — no ingest API
+│   ├── historical_generator.py       # Synthetic events via psycopg2 batch inserts (one call/day)
+│   ├── fast_historical_generator.py  # Same logic, one execute_values call per store's whole
+│   │                                    date range (page_size=10000) — prefer for bulk reseeding
 │   └── weather.py             # Deterministic synthetic weather (get_weather, weather_demand_multiplier);
-│                                     # see decisions #22/#23. Ground-truth-only — never fed to the model directly.
+│                                 ground-truth-only, never fed to the model directly (decision #7)
 │
 ├── api/
-│   ├── __init__.py
-│   ├── main.py                # FastAPI app entry point
-│   ├── routes/
-│   │   └── events.py          # POST endpoints: /sales, /waste, /stockout
-│   ├── models/
-│   │   └── schemas.py         # Pydantic models: SalesEvent, WasteEvent, StockoutEvent
-│   └── db/
-│       └── connection.py      # Neon connection pool, get_store_connection() with search_path
+│   └── db/connection.py       # Neon connection pool (dashboard + one-off scripts only, minconn=0),
+│                                 get_store_connection() with search_path
 │
 ├── dbt/
-│   ├── README.md              # Portfolio-only notice + model→Neon-script mapping (see decision #21)
-│   ├── dbt_project.yml        # Model paths, materialization config, schema assignments
-│   ├── profiles.yml.example
-│   ├── macros/
-│   │   └── generate_schema_name.sql  # Overrides dbt schema prefixing behavior
-│   ├── models/
-│   │   ├── staging/
-│   │   │   ├── sources.yml                        # Registers KS_DB.RAW as dbt sources
-│   │   │   ├── stg_sales_events.sql               # Cleans raw events, derives sale_date/hour/dow/minute/slot_index
-│   │   │   └── stg_waste_log.sql                  # Cleans waste events, derives waste_date/hour
-│   │   ├── intermediate/
-│   │   │   ├── int_sales__rolling_features_15min.sql  # 15-min slot aggregates per store/item
-│   │   │   └── int_sales__time_of_day_profile.sql     # Historical avg demand by store/item/slot_index
-│   │   └── marts/
-│   │       ├── mart_store_sales_15min.sql         # Wide fact table at 15-min grain, latest slot per store/item
-│   │       ├── mart_cold_start_profile.sql        # Category-level avg demand by slot_index, cold-start fallback
-│   │       ├── mart_waste_percentage.sql          # Waste cost / sale revenue per store/item/date
-│   │       └── mart_stockout_summary.sql          # Missed units per store/item/date/hour
-│   ├── tests/
-│   ├── seeds/
-│   └── snapshots/
+│   ├── README.md              # Portfolio-only notice + model→Neon-script mapping
+│   ├── models/                # staging → intermediate → marts (not run live)
+│   └── ...
 │
 ├── ml/
-│   ├── __init__.py
-│   ├── features.py            # FEATURE_COLS; load_features() calls scripts/build_training_features.py in-memory (Neon-only)
-│   ├── train.py               # LightGBM training, saves lgbm.joblib + encoders
-│   ├── predict.py             # Neon-native inference (menu.yaml + public.baseline_profile/cold_start_profile/traffic_ratio);
-│   │                              # generate_production_plan(weather_by_region=None) is the reusable entry point — None uses
-│   │                              # a neutral weather placeholder for the static weekly grid (public.predictions), while
-│   │                              # run_daily_simulation.py passes real per-date weather for its ML side
+│   ├── features.py            # FEATURE_COLS; load_features() calls build_training_features.py in-memory
+│   ├── train.py                # LightGBM training, saves lgbm.joblib + encoders
+│   ├── predict.py              # Neon-native inference; generate_production_plan(weather_by_region=None)
+│   │                              is the reusable entry point (see ML Model Design)
 │   ├── evaluate.py
-│   └── models/                # lgbm.joblib, store_encoder.joblib, item_encoder.joblib
+│   └── models/                 # lgbm.joblib, store_encoder.joblib, item_encoder.joblib
 │
 ├── dashboard/
-│   ├── app.py                 # Streamlit entry point, 5-min autorefresh
-│   ├── components/
-│   │   ├── production_plan.py # Split Kitchen/Chicken queues, session state checkboxes
-│   │   └── store_selector.py
-│   └── utils/
-│       └── data_fetch.py      # get_production_plan(), get_waste_summary() — all reads
-│                                # from Neon (public.predictions + live per-store tables)
+│   ├── app.py                  # Streamlit entry point, 5-min autorefresh
+│   ├── components/             # production_plan.py (Kitchen/Chicken queues), store_selector.py
+│   └── utils/data_fetch.py     # get_production_plan(), get_waste_summary() — all reads from Neon
 │
 ├── scripts/
-│   ├── init_db.py             # One-time Neon schema + table creation
-│   ├── run_pipeline.py        # Nightly cron: build_baseline_profile → A/B → git push (no Snowflake)
-│   ├── build_baseline_profile.py # Neon-native port of dbt's int_sales__time_of_day_profile;
-│   │                              # rebuilds public.baseline_profile from raw sales_events nightly
-│   ├── build_cold_start_profile.py # Neon-native port of dbt's mart_cold_start_profile;
-│   │                              # category-level avg demand by slot_index, from public.baseline_profile
-│   ├── build_traffic_ratio.py # Neon-native port of dbt's mart_store_traffic_ratio;
-│   │                              # per-store avg daily units relative to cross-store average
-│   ├── build_training_features.py # Neon-native port of dbt's mart_ml_training_features; NOT persisted
-│   │                              # to Neon (joined result is ~270MB vs. a 512MB project storage cap) —
-│   │                              # ml/features.py calls build_features() in-memory instead
-│   ├── generate_weather_seed.py # Single source of truth for synthetic weather: writes both
-│   │                              # dbt/seeds/weather_daily.csv (portfolio-only) and Neon public.weather_daily
-│   ├── run_daily_simulation.py # A/B comparison — ML vs baseline, outputs data/ab_results_v2.json
-│   │                              # (AB_RESULTS_PATH; data/ab_results.json is the frozen pre-retune archive,
-│   │                              # see decision #23). Baseline reads the static public.baseline_profile
-│   │                              # lookup (no weather axis, structurally). ML side calls
-│   │                              # ml.predict.generate_production_plan() in-process with that simulated
-│   │                              # date's actual per-region weather (a "perfect forecast" simplification)
-│   │                              # instead of the static predictions grid.
-│   ├── weather_impact_analysis.py # Manual/on-demand — simulates many synthetic dates, buckets
-│   │                              # store-days by that day's region weather (extreme_heat/extreme_cold/
-│   │                              # precip/neutral) and compares ML vs baseline within each bucket.
-│   │                              # Reproducible replacement for the untracked ad-hoc comparison
-│   │                              # referenced in decision #22; outputs data/weather_impact_results.json.
-│   │                              # Not part of the nightly cron.
-│   └── delete_simulation_data.py # Wipes simulation data from Neon (delete_neon) only —
-│                                    # Snowflake retired, nothing else to wipe
+│   ├── init_db.py                    # One-time Neon schema + table creation
+│   ├── run_pipeline.py               # Nightly cron: build_baseline_profile → A/B → git push
+│   ├── build_baseline_profile.py     # Neon-native port of dbt's int_sales__time_of_day_profile
+│   ├── build_cold_start_profile.py   # Neon-native port of dbt's mart_cold_start_profile
+│   ├── build_traffic_ratio.py        # Neon-native port of dbt's mart_store_traffic_ratio
+│   ├── build_training_features.py    # Neon-native port of mart_ml_training_features; NOT persisted
+│   │                                    to Neon (joined result ~270MB vs. 512MB storage cap) —
+│   │                                    ml/features.py calls build_features() in-memory instead
+│   ├── generate_weather_seed.py      # Source of truth for synthetic weather: writes both
+│   │                                    dbt/seeds/weather_daily.csv and Neon public.weather_daily
+│   ├── run_daily_simulation.py       # A/B comparison — ML vs baseline, outputs data/ab_results_v2.json
+│   ├── weather_impact_analysis.py    # Manual/on-demand — buckets simulated store-days by that day's
+│   │                                    region weather, compares ML vs baseline per bucket, writes
+│   │                                    data/weather_impact_results.json. Not part of the nightly cron.
+│   └── delete_simulation_data.py     # Wipes simulation data from Neon
 │
 └── tests/
     ├── test_api.py
@@ -208,46 +156,32 @@ kitchensync/
 
 ## Current State
 
-### Completed
-- All 12 store schemas in Neon with `sales_events`, `waste_log`, `stockout_events` tables
-- FastAPI ingest API with three endpoints: `/sales`, `/waste`, `/stockout`
-- Historical data generator (`historical_generator.py` / `fast_historical_generator.py`) — 6-week window, Poisson-based, sale-day aware; `START_DATE` is a constant at the top of the file, updated whenever the window is regenerated
-- Live POS simulator — async/httpx, SimClock, StoreState FIFO inventory, slot-boundary production logic, cook times, batch sizes, RUSH_CURVE-scaled batch quantities, startup inventory seeding (rounded to a whole unit), 24-hour prediction reload (from Neon `public.predictions` as of 2026-07-25)
-- Snowflake: **retired entirely as of 2026-08** (decision #21) — `KS_DB`/`KS_WH` and the RAW tables are no longer touched by any live or manual path; the dbt project (staging → intermediate → marts) remains in the repo as a portfolio-only artifact (see `dbt/README.md`), not run against live data
-- LightGBM model trained, predictions (12 stores × 45 active items × 672 slots, minus off-window slots filtered per item's `time_of_day`) written directly to Neon `public.predictions` — retrain via `python -m ml.train` then `python -m ml.predict` (no wrapper script, no Snowflake step; see retrain playbook below)
-- Cold-start fallback via `public.cold_start_profile` (Neon-native port of `mart_cold_start_profile`; category-level averages by slot_index, threshold = 4 samples), rebuilt via `scripts/build_cold_start_profile.py`
-- Streamlit dashboard: split Kitchen/Chicken production queues, current 15-min slot (anchored to Neon's own clock via `get_sim_now()`, not wall-clock, since the sim clock can drift from real time), missed demand, waste summary (units sold + total sales + waste %), 5-min autorefresh, session state checkboxes with completed items table, deployed live at [kitchensync.streamlit.app](https://kitchensync.streamlit.app) (Streamlit Community Cloud). All dashboard reads — stockout/waste (live) and predictions — come from Neon as of 2026-07-25; no Snowflake dependency remains in `dashboard/utils/data_fetch.py`.
-- A/B comparison system: `run_daily_simulation.py` — in-memory, seeded by date, ML vs hourly-average baseline, outputs `data/ab_results_v2.json` (post weather-retune, decision #23; `data/ab_results.json` is the frozen 37-day pre-retune archive); both prediction sources (`public.predictions`, `public.baseline_profile`) read from Neon
-- AWS EC2 deployment: API + simulator as systemd services (auto-restart on crash/reboot)
-- Nightly cron pipeline: single crontab line on EC2 (`crontab -l`), no separate systemd timer —
-  ```
-  0 2 * * * cd /home/ubuntu/kitchensync && git pull --rebase origin master && PYTHONPATH=. /home/ubuntu/.local/bin/uv run python scripts/run_pipeline.py >> logs/pipeline.log 2>&1
-  ```
-  which runs `build_baseline_profile.py` → A/B comparison → git push (no Snowflake step; retraining is a separate manual playbook, see below); commit step guards against "nothing to commit" so a no-op day doesn't fail the whole run. **Consolidated 2026-07-25**: the crontab previously had a commented-out `run_pipeline.py` line and a separate *active* line that called `run_daily_simulation.py` directly (bypassing `run_pipeline.py`, and — before the Neon migration — still querying Snowflake nightly even with `extract`/`dbt`/`predict` skipped). Both were replaced with the single line above.
-- Portfolio site integration: `ab_results_v2.json` committed to GitHub nightly, consumed by Astro static site (Astro site's data source URL needs updating to point at the new filename — out of scope for this repo)
-- Snowflake auth: RSA key pair (`~/.ssh/snowflake_rsa.p8`), registered via `ALTER USER` — only relevant if running the portfolio-only dbt project against Snowflake; not used by anything live
-- Two production-logic bugs found and fixed (2026-07-01/02) — see design decisions #18 and #19 below
-- Snowflake removed from the nightly/live hot path (2026-07-25, decision #20), then retired entirely including the manual retrain path (2026-08, decision #21)
-- Synthetic weather feature added (2026-08): `simulator/weather.py` gives the ML model a `(temp_f, precip)` axis the baseline's `(store, item, day_of_week, slot_index)` lookup structurally can never use; wired into the historical generators, `ml/features.py`'s training set, and `run_daily_simulation.py`'s ML side (real per-date weather) and ground-truth demand (same multiplier as the generators)
+- All 12 store schemas live in Neon (`sales_events`, `waste_log`, `stockout_events`)
+- No ingest API — retired 2026-08 (decision #18); the simulator writes to Neon directly
+- Historical generators (~70-day window, Poisson, sale-day and weather aware); `START_DATE` is a constant updated whenever the window is regenerated
+- Live POS simulator: asyncio, SimClock, FIFO inventory, slot-boundary production logic, startup inventory seeding, 24h prediction reload from Neon, in-memory event buffering with a 5-min batched flush to Neon via short-lived connections (decision #18)
+- LightGBM model trained on Neon-only features; predictions (12 stores × 45 active items × 672 slots, minus off-`time_of_day` slots) written to `public.predictions`
+- Cold-start fallback via `public.cold_start_profile` (category-level avg by slot_index, threshold = 4 samples)
+- Streamlit dashboard live at [kitchensync.streamlit.app](https://kitchensync.streamlit.app): split Kitchen/Chicken queues, current slot anchored to Neon's own clock (`get_sim_now()`, not wall-clock), missed demand, waste summary, 5-min autorefresh, session-state completion tracking
+- A/B comparison (`run_daily_simulation.py`): in-memory, seeded by date, ML (`generate_production_plan()` with real per-date weather) vs. baseline (`public.baseline_profile`); writes `data/ab_results_v2.json` (`ab_results.json` is a frozen pre-retune archive, decision #17 — the Astro site still needs its data-source URL updated to the `_v2` filename, out of scope for this repo)
+- `scripts/weather_impact_analysis.py`: manual/on-demand bucketed ML-vs-baseline comparison by weather condition, writes `data/weather_impact_results.json`
+- AWS EC2: simulator as a systemd service (no API service to run anymore); single nightly cron line runs `run_pipeline.py` (`build_baseline_profile → A/B → git push`, guards against "nothing to commit")
+- Synthetic weather (`simulator/weather.py`): gives the ML model a `(temp_f, precip)` axis the baseline's `(store, item, day_of_week, slot_index)` lookup structurally can't use; tuned deliberately strong for a portfolio-visible A/B gap (decision #17)
 
 ### Manual Retrain Playbook (Neon only, no Snowflake)
 
-Retraining is manual and infrequent (decision #12); no Snowflake step is involved:
+Retraining is manual and infrequent (decision #10):
 
-1. `PYTHONPATH=. uv run python scripts/build_baseline_profile.py` — refresh `public.baseline_profile` from the latest Neon sales data (also runs nightly via cron, but run it manually first if you want the retrain to reflect the very latest data)
-2. `PYTHONPATH=. uv run python -m ml.train` — `ml/features.py` calls `scripts/build_training_features.py` in-memory (joins `public.baseline_profile` + `public.weather_daily` per store), trains LightGBM, saves `ml/models/lgbm.joblib` + encoders
-3. `PYTHONPATH=. uv run python -m ml.predict` — builds the full store/item/slot grid from `config/menu.yaml` + `public.baseline_profile`/`cold_start_profile`/`traffic_ratio`, runs inference with a neutral weather placeholder (the grid has no calendar date), writes directly to Neon `public.predictions`
-4. Commit the refreshed `ml/models/*.joblib` files to git so EC2 can pull the new model without training on the t3.micro (decision #12)
+1. `PYTHONPATH=. uv run python scripts/build_baseline_profile.py` — refresh `public.baseline_profile` from latest Neon data
+2. `PYTHONPATH=. uv run python -m ml.train` — trains LightGBM on in-memory features (`build_training_features.py`), saves `ml/models/lgbm.joblib` + encoders
+3. `PYTHONPATH=. uv run python -m ml.predict` — builds the full grid from `config/menu.yaml` + Neon profile tables, runs inference with a neutral weather placeholder, writes to `public.predictions`
+4. Commit the refreshed `ml/models/*.joblib` files to git so EC2 can pull the new model without training on the t3.micro (which OOMs)
 
 ---
 
-## Database Design
+## Database Design (Neon / Postgres)
 
-### Neon (Postgres) — Transactional Layer
-
-Each store gets its own schema: `store_012`, `store_027`, `store_034`, etc. (12 stores total)
-
-Within each schema:
+Each store gets its own schema: `store_012`, `store_027`, ... (12 total).
 
 ```sql
 CREATE TABLE sales_events (
@@ -273,293 +207,99 @@ CREATE TABLE stockout_events (
 );
 ```
 
-### Snowflake — Analytics Layer
+Shared `public` tables: `predictions`, `baseline_profile`, `cold_start_profile`, `traffic_ratio`, `weather_daily`.
 
-Database: `KS_DB`
-Warehouse: `KS_WH`
-Schemas: `RAW`, `STAGING`, `INTERMEDIATE`, `MARTS`, `PUBLIC`
-
-#### RAW.SALES_EVENTS
-```
-STORE_ID     VARCHAR
-ITEM_ID      VARCHAR
-QUANTITY     INTEGER
-PRICE        FLOAT
-CREATED_AT   TIMESTAMP
-```
-
-#### RAW.WASTE_LOG
-```
-STORE_ID     VARCHAR
-ITEM_ID      VARCHAR
-QUANTITY     INTEGER
-CREATED_AT   TIMESTAMP
-```
-
----
-
-## dbt Layer Design
-
-### Key Configuration Notes
-- Schema names are controlled via `+schema` in `dbt_project.yml`
-- The `generate_schema_name` macro in `dbt/macros/` prevents dbt from prefixing schema names with the default target schema (e.g. `PUBLIC_STAGING` → `STAGING`)
-- `profiles.yml` lives at `~/.dbt/profiles.yml` (outside the project), edit with `nano ~/.dbt/profiles.yml`
-- All dbt commands run from the project root using `--project-dir dbt`
-
-### Staging (`stg_`) — KS_DB.STAGING
-- `stg_sales_events` — cleans and types raw events; derives `sale_date`, `sale_hour` (0–23), `sale_minute`, `day_of_week` (0=Monday, 6=Sunday), `slot_index`; filters null `created_at`
-- `stg_waste_log` — cleans waste events; derives `waste_date`, `waste_hour`
-
-### Intermediate (`int_`) — KS_DB.INTERMEDIATE
-- `int_sales__rolling_features_15min` — aggregates sales to 15-minute slot buckets per store/item
-- `int_sales__time_of_day_profile` — historical average quantity and sample size per store + item + day_of_week + sale_hour + sale_minute + slot_index; primary feature source for ML inference
-
-### Marts (`mart_`) — KS_DB.MARTS
-- `mart_store_sales_15min` — wide fact table at 15-min grain; per-store latest slot selected via `QUALIFY ROW_NUMBER() OVER (PARTITION BY store_id, item_id ORDER BY sale_date DESC, slot_index DESC) = 1`
-- `mart_cold_start_profile` — category-level average demand by slot_index; fallback for items with fewer than 4 data points
-- `mart_waste_percentage` — monetary waste formula: `(waste_cost / sale_revenue) * 100` per store + item + date; includes `sale_quantity` for units sold display; joins to `PUBLIC.MENU_ITEMS` for cost and price
-- `mart_stockout_summary` — total missed units per store + item + date + hour; joined to predictions in dashboard for missed demand display
-
-**Critical pattern**: All mart models that need "latest snapshot per store" use `QUALIFY ROW_NUMBER() OVER (PARTITION BY store_id, item_id ORDER BY ...)` — never a global `LIMIT 1` or `ORDER BY ... LIMIT 1` CTE, which would silently filter to the most-advanced store only.
-
-**Slot index formula**: `(day_of_week * 96) + (sale_hour * 4) + FLOOR(sale_minute / 15)`, range 0–671, wraps with `% 672`. Uses 0=Monday convention.
-
----
-
-## dbt Commands Reference
-
-```bash
-# Run a single model (from project root)
-uv run dbt run --project-dir dbt --select stg_sales_events
-
-# Run multiple models
-uv run dbt run --project-dir dbt --select stg_sales_events int_sales__rolling_features_15min
-
-# Run all models
-uv run dbt run --project-dir dbt
-
-# Compile only (no Snowflake execution — fast syntax check)
-uv run dbt compile --project-dir dbt --select <model_name>
-
-# Run tests
-uv run dbt test --project-dir dbt
-```
+**dbt** (portfolio-only, not run against live data) still documents staging → intermediate → marts models mirroring this design — see `dbt/README.md` for the model→Neon-script mapping and the slot-index formula (`(day_of_week * 96) + (sale_hour * 4) + FLOOR(sale_minute / 15)`, range 0–671, 0=Monday).
 
 ---
 
 ## ML Model Design
 
 ### Input Features
-| Feature | Source |
-|---|---|
-| `sale_hour` | `public.baseline_profile` (Neon; `scripts/build_baseline_profile.py`) |
-| `sale_minute` | `public.baseline_profile` |
-| `slot_index` | `public.baseline_profile` |
-| `day_of_week` | `public.baseline_profile` |
-| `is_weekend` | Derived (`day_of_week` in [5, 6]) |
-| `avg_slot_quantity` | `public.baseline_profile` |
-| `sample_size` | `public.baseline_profile` |
-| `temp_f` | `public.weather_daily` (training) / neutral placeholder or per-region actual (inference — see below) |
-| `precip` | `public.weather_daily` (training) / neutral placeholder or per-region actual (inference — see below) |
-| `store_id` (encoded) | Store dimension |
-| `item_id` (encoded) | Menu dimension |
+`sale_hour`, `sale_minute`, `slot_index`, `day_of_week`, `is_weekend` (derived), `avg_slot_quantity`, `sample_size` — all from `public.baseline_profile`. `temp_f`, `precip` from `public.weather_daily` (training) or a placeholder/actual value at inference (see below). `store_id`, `item_id` — encoded.
 
 ### Output
-- `predicted_units` — float, rounded to nearest integer
-- Written to Neon `public.predictions` with columns: `store_id`, `item_id`, `predicted_units`, `slot_index`, `predicted_at`
-- Predictions cover all 672 slots × 12 stores × 45 active items, minus rows filtered out for being outside an item's `time_of_day` window (see `ml/predict.py`'s grid filter)
+`predicted_units` (float, rounded to int at consumption) written to `public.predictions` (`store_id`, `item_id`, `predicted_units`, `slot_index`, `predicted_at`). Covers all 672 slots × 12 stores × 45 active items, minus rows outside an item's `time_of_day` window.
 
-### Cold-Start Logic
-Items with fewer than 4 data points fall back to category-level averages from `public.cold_start_profile` (Neon-native port of `mart_cold_start_profile`, `scripts/build_cold_start_profile.py`), merging on `(category, slot_index)`.
+### Cold-Start
+Items with fewer than 4 data points fall back to category-level averages from `public.cold_start_profile`, merged on `(category, slot_index)`.
 
 ### Inference
-`ml/predict.py`'s `generate_production_plan(weather_by_region=None, verbose=True)` reads all slots from `public.baseline_profile`, runs warm (LightGBM) / zero (established item, never sold in this slot) / cold (category avg via `public.cold_start_profile` × `public.traffic_ratio`) path per row. `weather_by_region=None` (the `__main__` entry point, used to refresh the live dashboard's static weekly grid) applies a neutral weather placeholder, since that grid has no calendar date to look up real weather for; `run_daily_simulation.py` instead passes a `{region: {"temp_f", "precip"}}` dict of that simulated date's actual weather, so the A/B comparison's ML side can exploit the one axis the baseline structurally can't (see decision #22). The `__main__` entry point writes the resulting full weekly prediction table to Neon `public.predictions` via `if_exists='replace'`.
+`ml/predict.py`'s `generate_production_plan(weather_by_region=None)` is the shared entry point. `weather_by_region=None` (the `__main__` path, used to refresh the dashboard's static weekly grid) applies a neutral weather placeholder, since that grid has no calendar date. `run_daily_simulation.py` instead passes real per-date-per-region weather as a "perfect forecast," giving the ML side a structural edge the baseline can't have (decision #7).
 
 ---
 
 ## Simulator Design
 
 ### Key Parameters
-- `TIME_SCALE = 20` — 1 real second = 20 simulated seconds
-- `TICK_INTERVAL = 1` — real seconds per tick
-- `START_TIME` — determined at startup by `get_start_time()`: queries `MAX(created_at)` across each Neon store schema's `sales_events` table directly (repointed from Snowflake `RAW.SALES_EVENTS` on 2026-07-25, since RAW no longer updates nightly) and resumes from the latest timestamp found; falls back to `datetime(2026, 7, 1, 0, 0, 0)` if Neon is empty (update this fallback whenever the historical seed window is regenerated with a new `START_DATE`)
+- `TIME_SCALE = 20` — 1 real second = 20 simulated seconds; `TICK_INTERVAL = 1` real second/tick
+- `START_TIME`: `get_start_time()` queries `MAX(created_at)` across Neon per-store schemas and resumes from there; falls back to a hardcoded date if empty — keep this fallback in sync with `START_DATE` whenever the seed window is regenerated
 
 ### Production Logic
-- Fires when `slot_idx != last_slot_idx and (is_rush or slot_idx % 4 == 0)`, where `is_rush = RUSH_CURVE[hour] >= 0.6`
-- Per item, skips the cook decision entirely if `(not item["active"]) or (item["added"] > sim_now.date()) or (hour not in range(HOURS_AVAILABLE[item["time_of_day"]]))` — **must be an OR of the three skip-conditions**, not an AND; an AND collapses to always-False for active items and silently cooks off-window items 24/7 (this exact bug shipped and caused chronic overproduction — see design decision #18)
-- `look_ahead = int(item["hold_time"] * 4)` slots
-- `demand = sum(predictions for next look_ahead slots)`
-- `committed = current_inventory + in_progress`
-- `gap = demand - committed`
-- `cook_qty = int(np.ceil(gap)) if gap > 1 else 0` — no minimum-batch floor; the old `scaled_batch = batch_size * 2 * RUSH_CURVE[hour]` floor was intentionally removed (commit `ccf1577`, 2026-06-14) because a floor forces low-traffic stores to overproduce relative to their thin demand. The remaining `ceil()`+`>1` threshold still imposes an implicit ~1-unit rounding tax per forced cook check, which is a known, accepted, conservative tradeoff — not a bug to "fix" by reintroducing a floor.
+- Fires when `slot_idx != last_slot_idx and (is_rush or slot_idx % 4 == 0)`, `is_rush = RUSH_CURVE[hour] >= 0.6`
+- Per item, skip the cook decision if `(not item["active"]) or (item["added"] > sim_now.date()) or (hour not in range(HOURS_AVAILABLE[...]))` — **must be OR, not AND** (an AND collapses to always-False for active items and cooks off-window items 24/7 — this exact bug shipped once, decision #8)
+- `look_ahead = hold_time * 4` slots; `demand = sum(predictions over look_ahead)`; `gap = demand - (inventory + in_progress)`; `cook_qty = ceil(gap) if gap > 1 else 0` — **no minimum-batch floor** (removed deliberately, decision #6: a floor forces low-traffic stores to overproduce). This `ceil()`+`>1` rounding tax bites hardest on precip days when ML's correctly-low predictions sit near the threshold (decision #17) — a known, accepted tradeoff, not a bug.
 
 ### Startup Seeding
-On `StoreState` init, inventory is pre-seeded with the predicted units for the current slot per item (respecting `time_of_day` availability), **rounded to a whole number** (`predicted_units` from Neon `public.predictions` is an unrounded float — every other cook-quantity code path rounds explicitly, and this one must too, or fractional quantities propagate through `consume()`/waste logging for the life of that batch; see design decision #19). Prevents stockout cascade before first slot boundary fires.
+Inventory is pre-seeded with predicted units for the current slot, **rounded to a whole number** — `predicted_units` is an unrounded float and every other cook-quantity path rounds explicitly; this one must too or fractional quantities propagate through `consume()`/waste logging (decision #9).
 
 ### Background Tasks
-- `refresh_targets_task()` — loads predictions from Neon `public.predictions` at startup and reloads every 24h (`asyncio.sleep(86400)`), not a one-time load. Repointed from Snowflake `MARTS.PREDICTIONS` on 2026-07-25.
+- `refresh_targets_task()` reloads predictions from `public.predictions` at startup and every 24h.
+- `flush_task()` (decision #18) — every `FLUSH_INTERVAL_SECONDS` (300s), drains each store's in-memory `pending_events` buffer and bulk-inserts sales/waste/stockout via `execute_values` over a short-lived connection opened and closed for that flush only. Buffers are swapped out (not cleared in place) before handing off to a thread executor, so `simulate_store()` can keep appending without racing the in-flight insert. On `KeyboardInterrupt`, `__main__` does one best-effort synchronous flush of whatever's still buffered; anything lost beyond that is bounded to at most one flush interval.
 
-### Running the Simulator
+### Running
 ```bash
-# Start the API first
-PYTHONPATH=. uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
-
-# Start the dashboard
 PYTHONPATH=. uv run streamlit run dashboard/app.py
-
-# Start the simulator
 PYTHONPATH=. uv run python -m simulator.pos_simulator
 ```
 
 ---
 
-## Store Configuration
+## Store & Menu Configuration
 
-12 stores across 4 regions, defined in `config/stores.yaml`:
+12 stores / 4 regions in `config/stores.yaml`: West Wisconsin (012, 027, 034), South Wisconsin (056, 061, 078), Minnesota (091, 103, 115), Iowa (128, 134, 147). Traffic levels 1–4; hours `24/7` or `5am-11pm`.
 
-| Region | Stores |
-|---|---|
-| West Wisconsin | store_012, store_027, store_034 |
-| South Wisconsin | store_056, store_061, store_078 |
-| Minnesota | store_091, store_103, store_115 |
-| Iowa | store_128, store_134, store_147 |
+Menu in `config/menu.yaml`: `id`, `name`, `price`, `sale_price`, `sale_days`, `cost`, `time_of_day`, `category`, `hold_time`, `cook_time`, `popularity`, `active`, `added`.
 
-Traffic levels 1–4 control simulated sales volume. Hours are either `24/7` or `5am-11pm`.
-
----
-
-## Menu Configuration
-
-Defined in `config/menu.yaml`. Fields: `id`, `name`, `price`, `sale_price`, `sale_days`, `cost`, `time_of_day`, `category`, `hold_time`, `cook_time`, `batch`, `popularity`, `active`, `added`.
-
-**`time_of_day`** — controls availability windows in the simulator:
-- `all_day`: [0, 24]
-- `breakfast`: [4, 12]
-- `lunch`: [10, 22]
-- `chicken`: [9, 22]
-
-**`category`** — drives cold-start grouping and waste display:
-- `sandwich`, `side`, `roller_grill`, `chicken`, `appetizer`
-
-**`cook_time`** — minutes from order to ready (used for `ready_at` in simulator):
-- `sandwich`: 10 min, `side`: 5 min, `roller_grill`: 10 min, `chicken`: 15 min, `appetizer`: 5 min
-
-**`batch`** — no longer used by the production logic (the `scaled_batch`/`RUSH_CURVE`-floor formula that once read this field was removed, see design decision #11) — currently dead config, referenced nowhere in `*.py`
-
-**Waste display mapping:**
-- Hot Foods = `sandwich` + `side`
-- Roller Grill = `roller_grill`
-- Chicken = `chicken` + `appetizer`
-
-**Sale pricing:** Items with `sale_days` and `sale_price` apply the discount on matching weekdays (0=Monday, 6=Sunday). Items without these fields always charge `price`.
-
-Items with `active: false` are excluded from all forecasting and simulation. `CHICKEN_POT_PIE` is discontinued. Cold-start items (fewer than 4 data points) fall back to category-level averages from `mart_cold_start_profile`.
-
-`menu_items.csv` in `dbt/seeds/` mirrors this file and must be kept in sync. After changing the CSV, run `DROP TABLE IF EXISTS KS_DB.PUBLIC.MENU_ITEMS` in Snowflake before `dbt seed`.
+- `time_of_day` windows: `all_day` [0,24], `breakfast` [4,12], `lunch` [10,22], `chicken` [9,22]
+- `category`: `sandwich`, `side`, `roller_grill`, `chicken`, `appetizer` — drives cold-start grouping and waste display (Hot Foods = sandwich+side, Roller Grill = roller_grill, Chicken = chicken+appetizer)
+- `sale_days`/`sale_price` apply a discount on matching weekdays (0=Monday); items without them always charge `price`
+- `active: false` excludes an item from forecasting and simulation entirely
+- `dbt/seeds/menu_items.csv` mirrors this file (portfolio-only; keep in sync if editing)
 
 ---
 
 ## Environment Variables
 
 ```
-# Neon (Postgres)
 NEON_DATABASE_URL=postgresql://user:pass@host/dbname
 
-# Snowflake
-SNOWFLAKE_ACCOUNT=
-SNOWFLAKE_USER=
-SNOWFLAKE_PASSWORD=
-SNOWFLAKE_DATABASE=KS_DB
-SNOWFLAKE_WAREHOUSE=KS_WH
-SNOWFLAKE_ROLE=
-SNOWFLAKE_PRIVATE_KEY_PATH=~/.ssh/snowflake_rsa.p8  # defaults to this if not set
-
-# API
 API_HOST=0.0.0.0
 API_PORT=8000
 
-# Simulator
 SIMULATOR_INTERVAL_SECONDS=3
 NUM_STORES=12
 ```
 
 ---
 
-## Development Phases
-
-### Phase 1 — Foundation ✅
-- [x] Repo structure scaffolded
-- [x] `config/menu.yaml` and `config/stores.yaml` created
-- [x] Neon database provisioned, per-store schemas and tables created
-- [x] FastAPI ingest API (sales, waste, stockout endpoints)
-- [x] Historical data generator (42 days, psycopg2 batch inserts, sale-day aware)
-- [x] Live POS simulator (async/httpx, Poisson, FIFO inventory)
-
-### Phase 2 — Data Pipeline ✅
-- [x] Snowflake provisioned (KS_DB, KS_WH)
-- [x] Extract script (Neon → RAW.SALES_EVENTS + RAW.WASTE_LOG)
-- [x] dbt project initialized and connected to Snowflake
-- [x] `generate_schema_name` macro for clean schema separation
-- [x] Staging models (`stg_sales_events`, `stg_waste_log`)
-- [x] Intermediate models (`int_sales__rolling_features_15min`, `int_sales__time_of_day_profile`)
-- [x] Mart models (`mart_store_sales_15min`, `mart_cold_start_profile`, `mart_waste_percentage`, `mart_stockout_summary`)
-- [x] Pipeline scripts: `run_prediction_update.py` (extract + dbt), `run_training.py` (full pipeline)
-
-### Phase 3 — ML Model ✅
-- [x] Feature engineering (`ml/features.py`)
-- [x] Baseline model (scikit-learn RandomForest)
-- [x] LightGBM model at 15-min slot grain
-- [x] Cold-start logic (category-level fallback, threshold = 4 samples)
-- [x] Inference writes predictions to Neon `public.predictions` (12 stores × 45 active items × 672 slots, minus off-window rows filtered per item's `time_of_day`)
-
-### Phase 4 — Dashboard ✅
-- [x] Streamlit app with store selector
-- [x] Split Kitchen / Chicken production queues (`st.data_editor` with checkboxes)
-- [x] Current 15-min slot filtering (slot_index computed from wall-clock time)
-- [x] Completed items table (done items removed from queue, shown separately)
-- [x] Missed demand column (stockout units lost)
-- [x] Waste summary (units sold + total sales + waste % per category)
-- [x] 5-minute auto-refresh (`streamlit-autorefresh`)
-- [x] Session state persistence for "Mark Complete" checkboxes
-
-### Phase 5 — Polish ✅
-- [x] CLAUDE.md updated
-- [x] README updated
-- [x] Dockerfile documented + docker-compose.yml added
-- [ ] Weather feature (stretch)
-
-### Phase 6 — A/B Comparison + AWS Deployment ✅
-- [x] `run_daily_simulation.py` — in-memory ML vs baseline comparison
-- [x] `data/ab_results_v2.json` — daily + cumulative metrics output (`data/ab_results.json` frozen as pre-retune archive, decision #23)
-- [x] AWS EC2 — API + simulator as systemd services
-- [x] Nightly cron pipeline — extract → dbt → predict → A/B → git push
-- [x] Portfolio site integration — Astro site reads ab_results_v2.json from GitHub
-- [x] Snowflake RSA key pair auth
-
----
-
 ## Key Design Decisions
 
-1. **Per-store Postgres schemas** — simpler connection management via `search_path`, demonstrates schema-level isolation; intentionally does not scale past ~50 stores (DDL migrations across hundreds of schemas become painful at Kwik Trip scale)
-2. **Transactional isolation vs. analytical consolidation** — per-store schemas in Neon for writes; single `store_id`-keyed table in Snowflake for cross-store analytics and model training
-3. **FastAPI over direct DB writes** — API-first design, more realistic to actual POS integrations
-4. **psycopg2 batch inserts for historical data** — `execute_values()` for bulk loading vs. one-request-per-event (100x+ faster)
-5. **LightGBM over Prophet** — allows feature engineering showcase; Prophet is a black box for interviews
-6. **15-min slot grain for ML** — matches real KPS production planning cycle; 672 slots/week covers the full weekly demand profile per store/item
-7. **dbt Core (not Cloud)** — local/free, realistic for a dev environment
-8. **`generate_schema_name` macro** — overrides dbt's default schema prefixing to produce clean `STAGING`, `INTERMEDIATE`, `MARTS` schemas
-9. **Config-file-driven menu** — items toggled without code changes; cold-start logic handles new items
-10. **Slot-boundary production logic** — cook decisions fire once per 15-min boundary, not every tick; look-ahead window = `hold_time * 4` slots
-11. **No minimum-batch floor for cook quantities** *(superseded 2026-06-14, commit `ccf1577`)* — an earlier version scaled a minimum cook quantity by hourly traffic (`batch_size * 2 * RUSH_CURVE[hour]`) to avoid under-production during rush. This was deliberately removed: a floor forces low-traffic stores to overproduce relative to their genuinely thin demand, which is worse than the alternative. Current logic (`cook_qty = int(np.ceil(gap)) if gap > 1 else 0`) has no floor, only rounding.
-12. **Retraining is manual** — cron runs `build_baseline_profile → A/B` nightly (Snowflake steps removed 2026-07-25, see decision #20) but never retrains the model. Retraining is triggered manually after significant data accumulation via the retrain playbook (`extract_to_snowflake.py` → `dbt run` → `ml.train` → `ml.predict` → `export_predictions_to_neon.py`, see Current State section). The model is committed to git (`ml/models/lgbm.joblib`) so EC2 can pull a new model without running training on the t3.micro (which OOMs)
-13. **A/B baseline never writes to Neon** — baseline system is purely in-memory metrics; only ML system generates training data; prevents baseline behavior from corrupting the model's learning signal
-14. **Honest A/B finding** — ML achieves +1.6pp better service level (97.6% vs 96.1%) and ~40% fewer stockout events, at the cost of +3.3pp more waste (8.6% vs 5.3%); root cause is the ML system's production checks firing ~4x more often (every 15-min slot boundary vs. baseline's hourly), each subject to the same `ceil()`-driven ~1-unit rounding tax described in decision #11 — not a batch floor (there isn't one); a production system would need a cost function to balance the trade-off
-15. **Conditional mean bias fix (2026-06-13)** — `int_sales__time_of_day_profile` originally averaged only over days with non-zero sales, making `avg_slot_quantity` a conditional mean (E[X|X>0]) instead of the true expected demand. For low-traffic stores this inflated predictions 3–4x. Fixed by computing `SUM(quantity) / total_dates` where `total_dates` counts all observed days for that store/day_of_week, including zero-sale days.
-16. **Simulator restart resume** *(query source superseded 2026-07-25, see decision #20)* — `get_start_time()` queries `MAX(created_at)` at startup and uses that as `START_TIME`, so the simulation clock resumes from the latest observed event rather than re-generating already-seen events. Originally queried Snowflake `RAW.SALES_EVENTS`; now queries Neon's per-store `sales_events` tables directly, since `RAW` no longer updates nightly. Falls back to a hardcoded date if empty — keep this fallback in sync with `START_DATE` in the historical generator whenever the seed window is regenerated.
-17. **Snowflake RSA key path via env var** — `SNOWFLAKE_PRIVATE_KEY_PATH` defaults to `~/.ssh/snowflake_rsa.p8` if not set. Avoids hardcoding the EC2-specific absolute path and makes the Docker setup portable. Used in `ml/features.py` (SQLAlchemy engine) and `scripts/extract_to_snowflake.py` (connector).
-18. **Production time-of-day gate must be OR, not AND (fixed 2026-07-02)** — `pos_simulator.py`'s per-item cook-decision skip check was written as `if (not item["active"] and item["added"] <= date and hour not in range(...)): continue`. Since `not item["active"]` is `False` for every real menu item, the whole `and`-chain collapsed to `False` and `continue` never fired — off-window items (e.g. chicken, available only 9am–10pm) got cook orders computed 24/7, with zero matching demand outside their window. This produced chronic overproduction concentrated at low-traffic stores (waste % inversely correlated with store traffic level: ~88% at level-1 stores vs. ~17% at level-4). Fixed to `if (not item["active"]) or (item["added"] > date) or (hour not in range(...)): continue` — an OR of the three skip-conditions, matching the (already-correct) positive filter used on the sales-generation side of the same file. `historical_generator.py` and `run_daily_simulation.py` were both already correct and unaffected.
-19. **Startup-seeded inventory must be rounded (fixed 2026-07-02)** — `StoreState` startup seeding used the raw `predicted_units` sum from `MARTS.PREDICTIONS` directly as a batch `quantity`, without rounding. `predicted_units` is stored as an unrounded float; every other cook-quantity code path explicitly rounds (`int(np.ceil(gap))`), but this one didn't. Since `consume()` only subtracts whole-number sale quantities from a batch, the fractional remainder persisted through the batch's lifecycle and showed up as a fractional quantity in waste logs too, if the batch expired before selling out. Fixed with `seed_demand = round(seed_demand)`. Self-limiting even before the fix: seeding only runs once at simulator startup, so the fractional contamination fully flushes out (sold or wasted) within one `hold_time` window and never recurs.
-20. **Snowflake removed from the nightly/live hot path (2026-07-25)** *(superseded 2026-08, see decision #21 — Snowflake is no longer resumed for anything, including retraining)* — cost-driven: Snowflake compute became unsustainable, and Neon was separately approaching its monthly compute-hour cap. The original idea (copy `MARTS.PREDICTIONS` to an EC2-local DB) didn't hold up: (a) the dashboard reads `MARTS.PREDICTIONS` directly too, not just the A/B script; (b) the A/B baseline needs `INT_SALES__TIME_OF_DAY_PROFILE` in addition to `PREDICTIONS`; (c) Streamlit Community Cloud cannot reach an EC2-local database without exposing a public port, so both tables had to land somewhere both the dashboard and EC2 can already reach — Neon. Landed as: `scripts/build_baseline_profile.py` ports the `int_sales__time_of_day_profile` SQL logic (including the decision #15 conditional-mean fix) to run directly against Neon's per-store schemas nightly, replacing dbt for that one model. `run_daily_simulation.py`, `dashboard/utils/data_fetch.py`, and `pos_simulator.py` (`get_start_time()`, `refresh_targets_task()`) were repointed from Snowflake to Neon. `run_pipeline.py`'s nightly chain simplified from `extract → dbt → predict → A/B → push` to `build_baseline_profile → A/B → push`. At the time, Snowflake itself was suspended rather than dropped, and resumed only for the manual retrain playbook — that manual path was itself retired a couple weeks later (decision #21). Net effect: predictions and the baseline profile no longer freeze between retrains — the baseline keeps updating nightly from fresh Neon data, only the LightGBM model itself is static between manual retrains (unchanged from decision #12).
-21. **Snowflake retired entirely, including the manual retrain path (2026-08)** — Snowflake compute costs kept climbing even suspended-by-default, so the remaining manual-retrain-only usage (decision #20) was removed too. `mart_cold_start_profile` and `mart_store_traffic_ratio` — the two dbt models decision #20 hadn't yet ported — got Neon-native equivalents (`scripts/build_cold_start_profile.py`, `scripts/build_traffic_ratio.py`), following the same pattern as `build_baseline_profile.py`. `mart_ml_training_features` also got a Neon port (`scripts/build_training_features.py`), but deliberately **not persisted** to Neon: an early attempt to write it as a table hit **272.6MB**, over half of Neon's 512MB project storage cap, and pushed total project storage to 487.7MB before it was dropped — since training is manual and infrequent (decision #12), `ml/features.py` now calls `build_features()` and recomputes the join in-memory on every call instead of paying that storage cost permanently. `ml/predict.py` was rewritten to source `menu.yaml`/`stores.yaml` directly for item/store dimensions (previously `PUBLIC.MENU_ITEMS` in Snowflake) and query the three new Neon tables instead of their Snowflake mart equivalents; its inference logic was also extracted into a reusable `generate_production_plan(weather_by_region=None)` function so `run_daily_simulation.py` could call the same code in-process (see decision #22) rather than reading a stale prediction table. `scripts/extract_to_snowflake.py`, `scripts/export_predictions_to_neon.py`, and `delete_simulation_data.py`'s `delete_snowflake()` were deleted outright as fully dead code; `ml/features.py`'s `get_snowflake_engine()` and its Snowflake imports were removed since nothing called it anymore. The dbt project itself was **not deleted** — it's kept in the repo as a portfolio artifact (see `dbt/README.md`) demonstrating the transformation-layer approach, but it no longer runs against live data and isn't part of any pipeline.
-22. **Synthetic weather feature to give ML a structural edge over the baseline (2026-08)** — the A/B comparison was showing only a marginal ML win because the simulated demand-generating process was itself a per-slot historical average, which the baseline (a `(store, item, day_of_week, slot_index)` lookup) could already capture about as well as LightGBM. `simulator/weather.py` adds a `(temp_f, precip)` axis, deterministic per `(region, date)` via `random.Random(f"{region}|{date.isoformat()}")` (not builtin `hash()`, which is `PYTHONHASHSEED`-randomized and unsafe across processes) — an axis the baseline structurally cannot use, since its lookup key has no calendar date. `weather_demand_multiplier(weather, category=None)` is ground-truth-only and pronounced (e.g. precip drops overall traffic ~15–20%; extreme heat shifts demand toward chicken/roller_grill and away from sandwich/side, extreme cold the reverse) — it's used to *generate* data in `historical_generator.py`/`fast_historical_generator.py` (both the overall daily volume and per-item popularity weights) and in `run_daily_simulation.py`'s ground-truth Poisson sales simulation, but is **never** fed to the model directly, which only ever sees the raw `temp_f`/`precip` values as features and has to learn the category interaction itself. `ml/predict.py`'s static weekly grid (`public.predictions`, consumed by the live dashboard) has no calendar date to condition on, so it uses a neutral placeholder (`NEUTRAL_TEMP_F` = midpoint of the neutral band, `NEUTRAL_PRECIP = 0`) — the day-to-day weather-aware behavior only happens in `run_daily_simulation.py`, which calls `generate_production_plan(weather_by_region=...)` with that simulated date's actual per-region weather as a "perfect forecast" simplification (justified since the weather itself is synthetic). Post-retrain feature importance confirmed the model is using the signal (`temp_f` ranked 3rd of 11 features, `precip` 5th). A/B differentiation is real but modest, not dramatic: averaged over 5-day samples, the ML-vs-baseline service-level gap was +0.31pp on extreme-temperature days vs. +0.23pp on neutral days — directionally consistent with the hypothesis, but ML's edge over the baseline is mostly a structural advantage (LightGBM modeling nonlinear store/item interactions a flat average can't) with weather as a real but secondary contributor, not the dominant one. *(Retuned 2026-08, see decision #23 — the underlying cause was that the baseline's historical average already absorbs the mean weather effect, `avg_slot_quantity` dominates LightGBM's feature importances, and unrelated day-to-day volume noise was the same order of magnitude as the weather multipliers, leaving too little room for the two prediction sources to visibly diverge.)*
-23. **Weather effect retuned for a portfolio-visible ML-vs-baseline gap (2026-08)** — decision #22's differentiation (+0.31pp/+0.23pp) was too small to read clearly on a chart. Root causes (see prior investigation): the baseline's `avg_slot_quantity` already bakes in the *average* weather effect across the training window, so ML's edge is bounded by the day-to-day deviation from that mean, not the full multiplier; only ~56% of days triggered any temp-based effect (40°F-wide neutral band) and 22% got the precip effect; and unrelated day-to-day volume noise (`RANDOMNESS` in `pos_simulator.py`/`fast_historical_generator.py`, ±12–25% of base volume) was the same order of magnitude as the weather signal, crowding it out. Fix, deliberately exaggerated since this is entirely synthetic data: `weather.py`'s neutral band shrunk from 40°F to 15°F wide (`COLD_THRESHOLD_F` 40→55, `HOT_THRESHOLD_F` 80→70, so ~83% of days now get a temp effect instead of ~56%), `PRECIP_PROBABILITY` raised 0.22→0.35, `CATEGORY_TEMP_EFFECTS` roughly doubled in magnitude per category, and `PRECIP_VOLUME_FACTOR` moved 0.80→0.70 (a first pass at 0.55 caused a regression, see below); `RANDOMNESS` offsets in both `pos_simulator.py` and `fast_historical_generator.py`/`historical_generator.py` were halved so the (now bigger) weather signal isn't swamped by unrelated noise. Required a full historical-data regeneration (`delete_simulation_data.py` + `fast_historical_generator.py`, ~70 days × 12 stores) and retrain (`build_baseline_profile/cold_start_profile/traffic_ratio.py` → `ml.train` → `ml.predict`) since the new `PRECIP_PROBABILITY` changes the underlying `get_weather()` draws. `scripts/weather_impact_analysis.py` was added as a reproducible replacement for the untracked ad-hoc "5-day sample" behind decision #22's numbers — it buckets many simulated store-days by that day's region weather and compares ML vs baseline within each bucket, writing `data/weather_impact_results.json`. Result: extreme-temperature buckets now show a service-level gap of **+2.0 to +2.02pp**, roughly **2.9x** the neutral-day gap of +0.70pp (vs. the original +0.31pp/+0.23pp) — feature importance confirms this, with `precip`'s raw importance score roughly tripling post-retrain. One caveat found and kept rather than engineered away: on precip days, ML's service level is marginally *below* the baseline's (-0.58pp) because `pos_simulator.py`'s `cook_qty = ceil(gap) if gap > 1 else 0` rounding tax (decision #11) bites proportionally harder when ML's correctly-low precip-day predictions sit near that threshold, while the baseline's flat, weather-blind average avoids the trap by accident. This is framed as an honest finding (in the spirit of decision #14) rather than tuned away: on the same precip days, ML's waste is roughly half the baseline's (9.84% vs. 18.28%) — an initial pass at `PRECIP_VOLUME_FACTOR=0.55` made this worse (service gap -1.51pp) before backing off to 0.70. To avoid disturbing the existing 37-day pre-retune history, `run_daily_simulation.py` now writes to a new `AB_RESULTS_PATH` (`data/ab_results_v2.json`) instead of overwriting `data/ab_results.json`, which is kept as a frozen archive; `run_pipeline.py`'s commit step was repointed at the new filename. The Astro portfolio site (separate repo) still needs its data source URL updated from `ab_results.json` to `ab_results_v2.json` — out of scope here.
+1. **Per-store Postgres schemas** — simpler `search_path`-based connection management; intentionally doesn't scale past ~50 stores.
+2. **LightGBM over Prophet** — supports feature engineering; Prophet is a black box for interviews.
+3. **15-min slot grain** — matches real KPS production planning cycles (672 slots/week).
+4. **Config-driven menu** — items toggled without code changes; cold-start handles new items automatically.
+5. **Slot-boundary production** — cook decisions fire once per 15-min boundary, not every tick; look-ahead = `hold_time * 4` slots.
+6. **No minimum-batch floor** — a floor forces low-traffic stores to overproduce relative to genuinely thin demand; `cook_qty = ceil(gap) if gap > 1 else 0` has only rounding, no floor.
+7. **Synthetic weather is ground-truth-only** — `weather_demand_multiplier()` generates data and drives the A/B ML side's "perfect forecast," but the model only ever sees raw `temp_f`/`precip` as features and must learn the interaction itself; gives ML a structural edge the baseline's date-less lookup can't have.
+8. **Production time-of-day gate must be OR, not AND** — an earlier AND-chain collapsed to always-False for active items, causing off-window items (e.g. chicken) to get cooked 24/7 and chronically overproduce at low-traffic stores. Fixed; watch for this pattern if touching `pos_simulator.py`'s skip logic.
+9. **Startup-seeded inventory must be rounded** — `predicted_units` is an unrounded float; seeding it directly let fractional quantities leak into `consume()`/waste logging for a batch's whole lifecycle. Always round cook/seed quantities explicitly.
+10. **Retraining is manual** — nightly cron only rebuilds the baseline profile and runs the A/B comparison; the model itself is retrained via the playbook above and the resulting `.joblib` files are committed to git (EC2's t3.micro OOMs if it trains itself).
+11. **A/B baseline never writes to Neon** — it's purely in-memory metrics, so baseline behavior can't corrupt the model's training signal.
+12. **Snowflake retired entirely** — all Snowflake-touching code (extract, dbt-against-Snowflake, export-to-Neon) was deleted; Neon-native ports (`build_baseline_profile.py`, `build_cold_start_profile.py`, `build_traffic_ratio.py`, `build_training_features.py`) replace it. `build_training_features.py`'s output is deliberately **not persisted** to Neon (it hit ~270MB against a 512MB storage cap) — `ml/features.py` recomputes it in-memory each call instead. The dbt project was kept as a portfolio artifact only (see `dbt/README.md`), not deleted.
+13. **Conditional-mean trap** — when computing average demand per slot, divide by *all* observed days for that slot (including zero-sale days), not just days with a sale, or low-traffic stores get inflated 3–4x. Applies to `build_baseline_profile.py` and any future profile-building script.
+14. **"Latest per store" pattern** — any per-store "latest snapshot" query must partition/group by store, never a global `ORDER BY ... LIMIT 1`, which would silently collapse to one store.
+15. **Honest A/B findings, not tuned away** — where ML underperforms the baseline on a subset (e.g. precip days, where the `ceil()`+`>1` rounding tax bites its correctly-low predictions harder, decision #17), that's reported as-is rather than engineered out, alongside where ML clearly wins (better service level, less waste elsewhere).
+16. **`weather_impact_analysis.py` as a reproducible A/B methodology** — replaced an earlier untracked ad-hoc "5-day sample" comparison with a script that buckets many simulated store-days by that day's region weather and compares ML vs baseline within each bucket, writing `data/weather_impact_results.json`. Manual/on-demand, not part of the nightly cron.
+17. **Weather signal retuned for a portfolio-visible gap (2026-08)** — the original weather tuning (decision #7) produced only a marginal ML-vs-baseline difference, because the baseline's `avg_slot_quantity` already bakes in the *average* weather effect, and unrelated day-to-day volume noise was the same order of magnitude as the weather signal. Fixed by deliberately strengthening `weather.py`'s effect (narrower neutral band, higher precip probability, larger per-category effects) and halving unrelated randomness, then regenerating history and retraining. Result: extreme-temperature service-level gap grew from +0.31pp to +2.0pp. Required a new output path — `run_daily_simulation.py` now writes `data/ab_results_v2.json` instead of overwriting `data/ab_results.json`, which is kept as a frozen pre-retune archive. The Astro site's data-source URL still needs updating to the new filename (out of scope for this repo).
+18. **Ingest API retired; simulator writes to Neon directly in 5-min batches (2026-08)** — the always-on FastAPI ingest service (`api/main.py`, `api/routes/events.py`) held a Postgres connection pool open for the life of the systemd process (`pool.SimpleConnectionPool(1, ...)`, eagerly opening a connection at import). Combined with the simulator's own long-lived pooled connection via the same mechanism, this kept Neon's compute endpoint permanently awake — Neon only autosuspends when there are zero active connections — and exhausted the free tier's monthly compute-hour allowance in about a week of continuous 24/7 running, regardless of actual event volume. Fixed by deleting the ingest API entirely (nothing else called it — the dashboard already read Neon directly) and rewriting `pos_simulator.py` to buffer sales/waste/stockout events in memory and flush them every `FLUSH_INTERVAL_SECONDS` (300s, matching the dashboard's own autorefresh cadence so no perceptible staleness is added) via a short-lived `psycopg2` connection per store, opened and closed just for that flush — mirroring the batch-insert pattern `fast_historical_generator.py` already used for backfills. `api/db/connection.py`'s pool remains for the dashboard and one-off scripts only, with `minconn` dropped to 0 so merely importing it doesn't eagerly open a connection. Tradeoff: up to one flush interval's worth of buffered events can be lost if the simulator process dies uncleanly (a clean `KeyboardInterrupt` does a best-effort final flush).

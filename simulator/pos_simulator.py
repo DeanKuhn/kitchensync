@@ -1,6 +1,7 @@
 import os
 import asyncio
-import httpx
+import psycopg2
+from psycopg2.extras import execute_values
 import yaml # type:ignore
 import random
 import numpy as np
@@ -11,9 +12,21 @@ from dotenv import load_dotenv # type:ignore
 
 load_dotenv()
 
+NEON_DATABASE_URL = os.getenv("NEON_DATABASE_URL")
+
 
 def get_neon_engine():
-    return create_engine(os.getenv("NEON_DATABASE_URL"))
+    return create_engine(NEON_DATABASE_URL)
+
+
+def get_store_db_connection(store_id):
+    connection = psycopg2.connect(NEON_DATABASE_URL)
+    cursor = connection.cursor()
+    cursor.execute(f"SET search_path TO {store_id}, public;")
+    connection.commit()
+    cursor.close()
+    return connection
+
 
 # --- LOAD CONFIGS ---
 with open("config/stores.yaml") as f:
@@ -30,8 +43,8 @@ for item in menu["items"]:
 
 # --- CONFIGURATION ---
 TIME_SCALE = 1
-API_BASE_URL = "http://localhost:8000"
 TICK_INTERVAL = 1
+FLUSH_INTERVAL_SECONDS = 300
 
 RUSH_CURVE = {
     0: 0.05, 1: 0.02, 2: 0.02, 3: 0.02, 4: 0.05, 5: 0.15,
@@ -66,14 +79,14 @@ def get_start_time():
 
     fallback = datetime(2026, 7, 1, 0, 0, 0)
     try:
-        from api.db.connection import get_store_connection, release_connection
-
         max_created_at = None
         for store in stores["stores"]:
-            conn = get_store_connection(store["id"])
-            result = pd.read_sql(
-                "SELECT MAX(created_at) FROM sales_events", conn)
-            release_connection(conn)
+            connection = get_store_db_connection(store["id"])
+            try:
+                result = pd.read_sql(
+                    "SELECT MAX(created_at) FROM sales_events", connection)
+            finally:
+                connection.close()
             value = result.iloc[0, 0]
             if value is not None and (max_created_at is None or value > max_created_at):
                 max_created_at = value
@@ -93,6 +106,13 @@ def get_start_time():
 # Global state for prescriptive targets:
 # (store_id, slot_index, item_id) -> target_qty
 production_targets = {}
+
+# Buffered live events awaiting the next periodic flush to Neon, keyed by
+# store_id. Populated in-memory by simulate_store(), drained by flush_task().
+pending_events = {
+    store["id"]: {"sales": [], "waste": [], "stockouts": []}
+    for store in stores["stores"]
+}
 
 
 # --- UTILITY CLASSES ---
@@ -133,9 +153,6 @@ class StoreState:
                 if b["ready_at"] <= sim_now:
                     self.inventory[item_id].append({"quantity": b["quantity"],
                                                     "expires": b["expires"]})
-                    # print(f"[{store_id}] FOOD READY! {item_id} x{b['quantity']} | "
-                    #       f"ready at {sim_now.strftime('%H:%M')} | "
-                    #       f"expires {b['expires'].strftime('%H:%M')}")
             self.in_progress[item_id] = \
                 [b for b in batches if b["ready_at"] > sim_now]
 
@@ -173,57 +190,77 @@ class StoreState:
         }
 
 
-# --- API FIRING FUNCTIONS ---
-async def fire_sale(client, store_id, item_id, quantity, price, sim_now):
-    url = f"{API_BASE_URL}/events/{store_id}/sales"
-    payload = {
-        "item_id": item_id,
-        "quantity": int(quantity),
-        "price": float(price),
-        "created_at": sim_now.isoformat()
-    }
+# --- EVENT BUFFERING (replaces per-event API calls) ---
+def buffer_sale(store_id, item_id, quantity, price, sim_now):
+    pending_events[store_id]["sales"].append((item_id, int(quantity), float(price), sim_now))
+
+
+def buffer_waste(store_id, item_id, quantity, sim_now):
+    pending_events[store_id]["waste"].append((item_id, int(quantity), sim_now))
+    print(f"[{store_id}] WASTE: {item_id} x{quantity} | {sim_now.strftime('%H:%M:%S')}")
+
+
+def buffer_stockout(store_id, item_id, quantity_requested, sim_now):
+    pending_events[store_id]["stockouts"].append((item_id, int(quantity_requested), sim_now))
+    print(f"[{store_id}] STOCKOUT: {item_id} x{quantity_requested} "
+          f"requested | {sim_now.strftime('%H:%M:%S')}")
+
+
+def flush_store(store_id, sales, waste, stockouts):
+    # Runs in a thread executor — opens one short-lived connection, bulk-
+    # inserts everything buffered since the last flush, and closes it.
+    connection = get_store_db_connection(store_id)
     try:
-        await client.post(url, json=payload, timeout=5.0)
+        cursor = connection.cursor()
+        if sales:
+            execute_values(cursor, """
+                INSERT INTO sales_events (item_id, quantity, price, created_at)
+                VALUES %s
+            """, sales)
+        if waste:
+            execute_values(cursor, """
+                INSERT INTO waste_log (item_id, quantity, created_at)
+                VALUES %s
+            """, waste)
+        if stockouts:
+            execute_values(cursor, """
+                INSERT INTO stockout_events (item_id, quantity_requested, created_at)
+                VALUES %s
+            """, stockouts)
+        connection.commit()
+        cursor.close()
+        print(f"[{store_id}] FLUSHED {len(sales)} sales, {len(waste)} waste, "
+              f"{len(stockouts)} stockouts to Neon.")
     except Exception as e:
-        print(f"[{store_id}] SALE ERROR: {e}")
+        connection.rollback()
+        print(f"[{store_id}] FLUSH ERROR: {e}")
+    finally:
+        connection.close()
 
 
-async def fire_waste(client, store_id, item_id, quantity, sim_now):
-    url = f"{API_BASE_URL}/events/{store_id}/waste"
-    payload = {
-        "item_id": item_id,
-        "quantity": int(quantity),
-        "created_at": sim_now.isoformat()
-    }
-    try:
-        await client.post(url, json=payload, timeout=5.0)
-        print(f"[{store_id}] WASTE: {item_id} x{quantity} " \
-              f"| {sim_now.strftime('%H:%M:%S')}")
-    except Exception as e:
-        print(f"[{store_id}] WASTE ERROR: {e}")
-
-
-async def fire_stockout(client, store_id, item_id, quantity_requested, sim_now):
-    url = f"{API_BASE_URL}/events/{store_id}/stockout"
-    payload = {
-        "item_id": item_id,
-        "quantity_requested": int(quantity_requested),
-        "created_at": sim_now.isoformat()
-    }
-    try:
-        await client.post(url, json=payload, timeout=5.0)
-        print(f"[{store_id}] STOCKOUT: {item_id} x{quantity_requested} " \
-              f"requested | {sim_now.strftime('%H:%M:%S')}")
-    except Exception as e:
-        print(f"[{store_id}] STOCKOUT ERROR: {e}")
+async def flush_task():
+    while True:
+        await asyncio.sleep(FLUSH_INTERVAL_SECONDS)
+        loop = asyncio.get_event_loop()
+        for store in stores["stores"]:
+            store_id = store["id"]
+            buf = pending_events[store_id]
+            # Swap out the buffered lists before handing them to a worker
+            # thread, so simulate_store() can keep appending to fresh lists
+            # without racing the in-flight insert.
+            sales, buf["sales"] = buf["sales"], []
+            waste, buf["waste"] = buf["waste"], []
+            stockouts, buf["stockouts"] = buf["stockouts"], []
+            if sales or waste or stockouts:
+                await loop.run_in_executor(
+                    None, flush_store, store_id, sales, waste, stockouts)
 
 
 # --- BACKGROUND TASKS ---
 async def refresh_targets_task():
 
     while True:
-        # Reloads predictions every 24h (see asyncio.sleep below) —
-        # not a one-time load
+        # Reloads predictions every 24h
 
         engine = get_neon_engine()
         global production_targets
@@ -255,7 +292,7 @@ async def refresh_targets_task():
 
 
 # --- SIMULATION FUNCTION ---
-async def simulate_store(config, clock, client):
+async def simulate_store(config, clock):
 
     store_id = config["id"]
     level = int(config["level"])
@@ -355,14 +392,12 @@ async def simulate_store(config, clock, client):
                     if actual_sold > 0:
                         price = item["sale_price"] if weekday_int in \
                             item.get("sale_days", []) else item["price"]
-                        asyncio.create_task(fire_sale(client, store_id,
-                                    item["id"], actual_sold, price, sim_now))
+                        buffer_sale(store_id, item["id"], actual_sold, price, sim_now)
                         print(f"[{store_id}] SALE: {item['id']} x{actual_sold} "
                               f"@ ${price:.2f} | {sim_now.strftime('%H:%M')}")
                         hour_sales += actual_sold
                     else:
-                        asyncio.create_task(fire_stockout(client, store_id, item["id"],
-                                            qty_to_sell, sim_now))
+                        buffer_stockout(store_id, item["id"], qty_to_sell, sim_now)
                         hour_stockouts += qty_to_sell
 
         # --- 2. PRODUCTION LOGIC (Sliding Window Replenishment) ---
@@ -406,8 +441,7 @@ async def simulate_store(config, clock, client):
                 [b for b in batches if b["expires"] > sim_now]
 
             for b in expired_batches:
-                asyncio.create_task(fire_waste(
-                    client, store_id, item_id, b["quantity"], sim_now))
+                buffer_waste(store_id, item_id, b["quantity"], sim_now)
                 hour_wasted += b["quantity"]
 
         await asyncio.sleep(TICK_INTERVAL)
@@ -416,26 +450,31 @@ async def simulate_store(config, clock, client):
 async def main():
     START_TIME = get_start_time()
     clock = SimClock(START_TIME, TIME_SCALE)
-    async with httpx.AsyncClient(limits=httpx.Limits(max_connections=100)) as client:
-        # Initial wait to let the targets load
-        targets_task = asyncio.create_task(refresh_targets_task())
 
-        print("[SIMULATOR] Waiting for production targets to load...")
-        while not production_targets:
-            await asyncio.sleep(1)
+    # Initial wait to let the targets load
+    targets_task = asyncio.create_task(refresh_targets_task())
 
-        tasks = [targets_task]
+    print("[SIMULATOR] Waiting for production targets to load...")
+    while not production_targets:
+        await asyncio.sleep(1)
 
-        # One simulator task per store
-        for store in stores["stores"]:
-            tasks.append(asyncio.create_task(simulate_store(store, clock, client)))
+    tasks = [targets_task, asyncio.create_task(flush_task())]
 
-        print(f"--- SIMULATION STARTED (Scale: {TIME_SCALE}x) ---")
-        await asyncio.gather(*tasks)
+    # One simulator task per store
+    for store in stores["stores"]:
+        tasks.append(asyncio.create_task(simulate_store(store, clock)))
+
+    print(f"--- SIMULATION STARTED (Scale: {TIME_SCALE}x) ---")
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nSimulation stopped by user.")
+        print("\nSimulation stopped by user. Flushing buffered events...")
+        for store in stores["stores"]:
+            store_id = store["id"]
+            buf = pending_events[store_id]
+            if buf["sales"] or buf["waste"] or buf["stockouts"]:
+                flush_store(store_id, buf["sales"], buf["waste"], buf["stockouts"])

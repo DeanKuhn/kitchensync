@@ -1,34 +1,30 @@
-# KitchenSync — Full Stack (API + Simulator + Dashboard)
+# KitchenSync — Full Stack (Simulator + Dashboard)
 #
-# All three services share the same image build.
+# Both services share the same image build.
 # Environment variables are loaded from .env (see .env.example).
 #
-# All three services (api, simulator, dashboard) read/write Neon only —
-# Snowflake is retired from the live/nightly path entirely (2026-08).
+# Both services read/write Neon only — Snowflake is retired from the
+# live/nightly path entirely (2026-08).
+#
+# There is no ingest API service (2026-08) — the simulator writes
+# directly to Neon in short-lived, batched connections instead of
+# POSTing to a FastAPI service. See Dockerfile for why.
 #
 # ML pipeline (build_baseline_profile → A/B) is not included here —
 # it runs as a nightly cron job on EC2.
 #
 # Usage:
 #   docker compose up --build
-#   docker compose up api          # API only
+#   docker compose up dashboard    # dashboard only
 #   docker compose logs -f simulator
 
 services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file: .env
-
   simulator:
     build: .
     command: uv run python -m simulator.pos_simulator
     env_file: .env
     environment:
       - PYTHONPATH=.
-    depends_on:
-      - api
 
   dashboard:
     build: .
