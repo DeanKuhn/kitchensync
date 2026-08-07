@@ -20,13 +20,9 @@ FEATURE_COLS = [
 
 
 def load_features():
-
-    # Recomputes scripts/build_training_features.py's Neon-native port of
-    # mart_ml_training_features in-memory each call (Snowflake/dbt retired
-    # from this path) rather than reading a persisted Neon table -- the
-    # joined result is ~270MB, too large to justify keeping permanently
-    # against a 512MB project storage cap when training only runs manually
-    # and infrequently (decision #12).
+    """Recomputes scripts/build_training_features.py's Neon-native port of
+    mart_ml_training_features in-memory each call.
+    """
     from scripts.build_training_features import build_features
 
     df = build_features()
@@ -37,6 +33,5 @@ def load_features():
     # Postgres boolean -> pandas bool; cast to int like is_weekend for a
     # model-friendly numeric dtype
     df['precip'] = df['precip'].astype(int)
-
 
     return df

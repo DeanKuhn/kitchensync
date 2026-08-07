@@ -28,10 +28,10 @@ def main():
         "Build baseline profile (Neon)")
 
     run("PYTHONPATH=. uv run python scripts/run_daily_simulation.py",
-        "A/B simulation → data/ab_results.json")
+        "A/B simulation → data/ab_results_v2.json")
 
-    run("git add data/ab_results.json && (git diff --cached --quiet || git commit -m \"Daily A/B results $(date +%Y-%m-%d)\") && git pull --rebase origin master && git push",
-        "Commit and push ab_results.json")
+    run("git add data/ab_results_v2.json && (git diff --cached --quiet || git commit -m \"Daily A/B results $(date +%Y-%m-%d)\") && git pull --rebase origin master && git push",
+        "Commit and push ab_results_v2.json")
 
     elapsed = (datetime.now() - start).seconds
     print(f"\n[PIPELINE] Complete in {elapsed}s.")

@@ -23,6 +23,8 @@ from ml.predict import generate_production_plan
 
 load_dotenv()
 
+AB_RESULTS_PATH = "data/ab_results_v2.json"
+
 
 def get_neon_engine():
     return create_engine(os.getenv("NEON_DATABASE_URL"))
@@ -44,11 +46,6 @@ for item in menu["items"]:
 
 def load_ml_predictions(seed_date):
 
-    # In-process inference (not the static public.predictions grid) so the
-    # ML side can condition on the simulated day's actual weather -- the axis
-    # the baseline can never use, since it's a pure (store, item, dow, slot)
-    # lookup. Treating the A/B simulation's synthetic ground-truth weather as
-    # a "perfect forecast" for that date is a deliberate simplification.
     regions = {s["region"] for s in stores["stores"]}
     weather_by_region = {r: get_weather(r, seed_date.date()) for r in regions}
 
@@ -57,7 +54,7 @@ def load_ml_predictions(seed_date):
     df = generate_production_plan(weather_by_region=weather_by_region, verbose=False)
 
     ml_production_targets = {}
-    for row in df.itertuples(index=False):
+    for row in df.itertuples(index=False): # type:ignore
         key = (row.store_id, int(row.slot_index), row.item_id)
         ml_production_targets[key] = float(row.predicted_units)
 
@@ -334,7 +331,7 @@ def main():
         baseline_predictions, seed_date, mode="baseline"
     )
 
-    data = load_ab_results("data/ab_results.json")
+    data = load_ab_results(AB_RESULTS_PATH)
     entry_dict = {
         "date": seed_date.strftime("%Y-%m-%d"),
         "ml": ml_totals,
@@ -344,7 +341,7 @@ def main():
     data["daily"].append(entry_dict)
 
     data["cumulative"] = compute_cumulative(data["daily"])
-    save_ab_results("data/ab_results.json", data)
+    save_ab_results(AB_RESULTS_PATH, data)
 
 
 if __name__ == "__main__":

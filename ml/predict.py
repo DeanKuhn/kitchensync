@@ -134,9 +134,9 @@ def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder,
         # "perfect forecast" ML side)
         region = df_warm['store_id'].map(STORE_REGIONS)
         df_warm['temp_f'] = region.map(
-            lambda r: weather_by_region[r]['temp_f'])
+            lambda r: weather_by_region[r]['temp_f']) # type:ignore
         df_warm['precip'] = region.map(
-            lambda r: int(weather_by_region[r]['precip']))
+            lambda r: int(weather_by_region[r]['precip'])) # type:ignore
     else:
         df_warm['temp_f'] = NEUTRAL_TEMP_F
         df_warm['precip'] = NEUTRAL_PRECIP

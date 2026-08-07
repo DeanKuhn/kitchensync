@@ -44,10 +44,10 @@ BASE_VOLUME = {1: 80, 2: 140, 3: 220, 4: 400}
 WEIGHTS = [5, 10, 25, 30, 25, 10, 5]
 
 RANDOMNESS = {
-    1: {"values": [-10, -8, -2, 0, 2, 6, 10], "weights": WEIGHTS},
-    2: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": WEIGHTS},
-    3: {"values": [-60, -30, -10, 0, 10, 30, 60], "weights": WEIGHTS},
-    4: {"values": [-100, -50, -20, 0, 20, 50, 100], "weights": WEIGHTS}
+    1: {"values": [-5, -4, -1, 0, 1, 3, 5], "weights": WEIGHTS},
+    2: {"values": [-15, -8, -3, 0, 3, 8, 15], "weights": WEIGHTS},
+    3: {"values": [-30, -15, -5, 0, 5, 15, 30], "weights": WEIGHTS},
+    4: {"values": [-50, -25, -10, 0, 10, 25, 50], "weights": WEIGHTS}
 }
 
 HOURS_AVAILABLE = {
