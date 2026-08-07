@@ -2,8 +2,8 @@
 
 This dbt project is kept in the repo as a demonstration of a modern
 transformation stack (staging → intermediate → marts, tests, macros), but it
-is **not part of the live pipeline**. As of 2026-08, Snowflake was retired
-entirely (cost-driven — see CLAUDE.md decision #20) and every model this
+is **not part of the live pipeline**. As of 2026-07, Snowflake was retired
+entirely (cost-driven — see CLAUDE.md decision #12) and every model this
 project defines has a Neon-native Python equivalent that runs instead:
 
 | dbt model | Neon-native replacement |
