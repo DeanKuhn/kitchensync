@@ -19,6 +19,19 @@ store_dates as (
 
 ),
 
+stores as (
+
+    select * from {{ ref('stores') }}
+
+),
+
+
+weather as (
+
+    select * from {{ ref('weather_daily') }}
+
+),
+
 
 -- active (store, item, slot) combinations joined to all matching dates,
 -- starting from the profile means we only generate rows for slots where
@@ -28,6 +41,7 @@ spine as (
 
     select
         p.store_id,
+        st.region,
         p.item_id,
         sd.sale_date,
         p.day_of_week,
@@ -42,6 +56,8 @@ spine as (
         on  p.store_id                     = sd.store_id
         -- day_of_week flag
         and dayofweekiso(sd.sale_date) - 1 = p.day_of_week
+    inner join stores st
+        on  p.store_id = st.store_id
 
 ),
 
@@ -58,7 +74,9 @@ final as (
         s.day_of_week,
         coalesce(r.slot_quantity, 0) as slot_quantity,
         s.avg_slot_quantity,
-        s.sample_size
+        s.sample_size,
+        w.temp_f,
+        w.precip
 
     from spine s
     left join rolling r
@@ -66,6 +84,9 @@ final as (
         and s.item_id    = r.item_id
         and s.sale_date  = r.sale_date
         and s.slot_index = r.slot_index
+    left join weather w
+        on  s.region    = w.region
+        and s.sale_date = w.sale_date
 
 )
 

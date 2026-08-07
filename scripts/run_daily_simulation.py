@@ -9,7 +9,6 @@ import json
 from dotenv import load_dotenv # type:ignore
 
 
-# shared constraints pulled from pos_simulator
 from simulator.pos_simulator import (
     RUSH_CURVE,
     BASE_VOLUME,
@@ -19,6 +18,8 @@ from simulator.pos_simulator import (
 )
 
 from simulator.pos_simulator import StoreState
+from simulator.weather import get_weather, weather_demand_multiplier
+from ml.predict import generate_production_plan
 
 load_dotenv()
 
@@ -41,35 +42,28 @@ for item in menu["items"]:
         item["added"] = datetime.strptime(item["added"], "%Y-%m-%d").date()
 
 
-def load_ml_predictions():
+def load_ml_predictions(seed_date):
 
-    engine = get_neon_engine()
+    # In-process inference (not the static public.predictions grid) so the
+    # ML side can condition on the simulated day's actual weather -- the axis
+    # the baseline can never use, since it's a pure (store, item, dow, slot)
+    # lookup. Treating the A/B simulation's synthetic ground-truth weather as
+    # a "perfect forecast" for that date is a deliberate simplification.
+    regions = {s["region"] for s in stores["stores"]}
+    weather_by_region = {r: get_weather(r, seed_date.date()) for r in regions}
 
-    try:
-        print("[SIMULATOR] Loading 15-min ML production targets from Neon...")
-        query = text("""
-            SELECT store_id, slot_index, item_id, predicted_units
-            FROM public.predictions
-        """)
+    print("[SIMULATOR] Running in-process ML inference "
+          f"for {seed_date.date()} (weather-conditioned)...")
+    df = generate_production_plan(weather_by_region=weather_by_region, verbose=False)
 
-        df = pd.read_sql(query, engine)
-        df.columns = df.columns.str.lower()
+    ml_production_targets = {}
+    for row in df.itertuples(index=False):
+        key = (row.store_id, int(row.slot_index), row.item_id)
+        ml_production_targets[key] = float(row.predicted_units)
 
-        ml_production_targets = {}
-        for _, row in df.iterrows():
-            key = (
-                row['store_id'],
-                int(row['slot_index']),
-                row['item_id']
-            )
-            ml_production_targets[key] = float(row['predicted_units'])
-
-        print(f"[SIMULATOR] Loaded {len(ml_production_targets)} "
-               "prescriptive targets for ML model.")
-        return ml_production_targets
-
-    except Exception as e:
-        print(f"[TARGETS ERROR FOR ML] {e}")
+    print(f"[SIMULATOR] Loaded {len(ml_production_targets)} "
+           "prescriptive targets for ML model.")
+    return ml_production_targets
 
 
 def load_baseline_predictions():
@@ -107,8 +101,10 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
 
     store_id = store_config["id"]
     level = int(store_config["level"])
+    region = store_config["region"]
     state = StoreState(store_id)
     store_hours = store_config["hours"]
+    weather = get_weather(region, seed_date.date())
 
     print(f"[{mode.upper()}] Simulating {store_id}...")
 
@@ -175,17 +171,10 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
                         ):
                     continue
 
-                if mode == "ml":
-                    look_ahead = int(item["hold_time"] * 4)
-                    demand = sum(predictions.get(
-                        (store_id, (global_slot + i) % 672, item["id"]), 0)
-                        for i in range(look_ahead))
-
-                else:
-                    look_ahead = int(item["hold_time"] * 4)
-                    demand = sum(predictions.get(
-                        (store_id, (global_slot + i) % 672, item["id"]), 0)
-                        for i in range(look_ahead))
+                look_ahead = int(item["hold_time"] * 4)
+                demand = sum(predictions.get(
+                    (store_id, (global_slot + i) % 672, item["id"]), 0)
+                    for i in range(look_ahead))
 
                 committed = (state.get_total_quantity(item["id"]) +
                             state.get_in_progress_quantity(item["id"]))
@@ -203,7 +192,8 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
         random_offset = random.choices(RANDOMNESS[level]["values"],
                             weights=RANDOMNESS[level]["weights"])[0]
         hourly_lambda = (RUSH_CURVE[hour] * WEEKDAY_MULTIPLIER[day_of_week] *
-                            (BASE_VOLUME[level] + random_offset))
+                            (BASE_VOLUME[level] + random_offset) *
+                            weather_demand_multiplier(weather))
 
         tick_lambda = (hourly_lambda / 4) # 15 minute slots
 
@@ -219,7 +209,10 @@ def simulate_store_day(store_config, predictions, day_of_week, seed_date, mode):
             ]
 
             if available_items:
-                popularity_weights = [i["popularity"] for i in available_items]
+                popularity_weights = [
+                    i["popularity"] * weather_demand_multiplier(weather, i["category"])
+                    for i in available_items
+                ]
                 for _ in range(num_customers):
                     item = random.choices(available_items,
                                         weights=popularity_weights)[0]
@@ -300,8 +293,8 @@ def compute_cumulative(daily):
                         * 100 for day in daily) / len(daily))
 
     base_service_level = (sum(day["baseline"]["units_sold"] /
-                        (day["baseline"]["units_sold"] + day["baseline"]["stockouts"])
-                        * 100 for day in daily) / len(daily))
+                (day["baseline"]["units_sold"] + day["baseline"]["stockouts"])
+                * 100 for day in daily) / len(daily))
 
     return {
         "days_run": days_run,
@@ -314,26 +307,32 @@ def compute_cumulative(daily):
 
 def main():
 
-    ml_predictions = load_ml_predictions()
-    baseline_predictions = load_baseline_predictions()
     seed_date = datetime.now()
+    ml_predictions = load_ml_predictions(seed_date)
+    baseline_predictions = load_baseline_predictions()
 
     # Diagnostic: compare total estimated demand for the simulation day
     dow = seed_date.weekday()
     day_slots = range(dow * 96, (dow + 1) * 96)
-    ml_total = sum(ml_predictions.get((s["id"], slot, item["id"]), 0)
-                   for s in stores["stores"]
-                   for slot in day_slots
-                   for item in menu["items"] if item["active"])
-    base_total = sum(baseline_predictions.get((s["id"], slot, item["id"]), 0)
-                     for s in stores["stores"]
-                     for slot in day_slots
-                     for item in menu["items"] if item["active"])
+    ml_total = sum(
+        ml_predictions.get((s["id"], slot, item["id"]), 0) # type:ignore
+            for s in stores["stores"]
+            for slot in day_slots
+            for item in menu["items"] if item["active"]
+        )
+    base_total = sum(
+        baseline_predictions.get((s["id"], slot, item["id"]), 0) # type:ignore
+            for s in stores["stores"]
+            for slot in day_slots
+            for item in menu["items"] if item["active"]
+        )
     print(f"\nML demand estimate (day):       {ml_total:.1f}")
     print(f"Baseline demand estimate (day): {base_total:.1f}\n")
 
     ml_totals = simulate_day(ml_predictions, seed_date, mode="ml")
-    baseline_totals = simulate_day(baseline_predictions, seed_date, mode="baseline")
+    baseline_totals = simulate_day(
+        baseline_predictions, seed_date, mode="baseline"
+    )
 
     data = load_ab_results("data/ab_results.json")
     entry_dict = {

@@ -67,6 +67,17 @@ QUERY = """
     group by f.item_id, f.sale_hour, f.slot_index, f.day_of_week, t.total_dates
 """
 
+# Kept as a separate, lightweight query rather than a 3rd CTE joined into
+# QUERY above -- adding it as a join inside QUERY pushed Postgres into a
+# heavier hash-join plan that exceeded Neon's compute memory limit on the
+# full 70-day/12-store dataset. This one's cheap (single group by, no
+# cross-join blowup) and gets merged into the profile in pandas instead.
+DAYS_OBSERVED_QUERY = """
+    select item_id, count(distinct created_at::date) as days_observed
+    from sales_events
+    group by item_id
+"""
+
 
 def build_profile():
 
@@ -78,8 +89,10 @@ def build_profile():
 
         conn = get_store_connection(store_id)
         df = pd.read_sql(QUERY, conn)
+        days_observed = pd.read_sql(DAYS_OBSERVED_QUERY, conn)
         release_connection(conn)
 
+        df = df.merge(days_observed, on="item_id", how="left")
         df.insert(0, "store_id", store_id)
         frames.append(df)
 

@@ -1,46 +1,49 @@
-# Inference: produces next-hour production plan
-
-
+import os
 import joblib
 import yaml # type:ignore
 import pandas as pd
+from sqlalchemy import create_engine # type:ignore
+from dotenv import load_dotenv # type:ignore
 
-from ml.features import get_snowflake_engine
 import ml.features as features
 from simulator.pos_simulator import HOURS_AVAILABLE
+from simulator.weather import COLD_THRESHOLD_F, HOT_THRESHOLD_F
+
+load_dotenv()
 
 ESTABLISHED_DAYS_THRESHOLD = 14
 FEATURE_COLS = features.FEATURE_COLS
 
+# This is a static, date-agnostic weekly grid (no calendar date to look up
+# real/synthetic weather for), so warm-path predictions use a neutral
+# placeholder sitting in the middle of weather.py's neutral band -- the
+# temp/precip combo whose ground-truth multiplier was 1.0x (no effect) for
+# every category during training, i.e. "an average, weather-neutral day".
+NEUTRAL_TEMP_F = (COLD_THRESHOLD_F + HOT_THRESHOLD_F) / 2
+NEUTRAL_PRECIP = 0
+
+with open("config/menu.yaml", "r") as f:
+    _menu = yaml.safe_load(f)
+
+with open("config/stores.yaml", "r") as f:
+    _stores = yaml.safe_load(f)
+
+ITEM_CATEGORIES = {i["id"]: i["category"] for i in _menu["items"]}
+STORE_REGIONS = {s["id"]: s["region"] for s in _stores["stores"]}
+
 
 def get_all_store_items():
 
-    # Get all stores
     with open("config/stores.yaml", "r") as f:
         stores = yaml.safe_load(f)
 
-    # Get all active items
-    engine = get_snowflake_engine()
-    query = """
-        select
-            item_id,
-            category,
-            time_of_day,
-            added
-        from PUBLIC.MENU_ITEMS
-        where active = true
-    """
+    df = pd.DataFrame(_menu["items"]).rename(columns={"id": "item_id"})
+    df = df[df["active"]][["item_id", "category", "time_of_day", "added"]]
 
-    # Create a df of all items
-    df = pd.read_sql(query, engine)
-    df.columns = df.columns.str.lower()
-
-    # Create a df of all stores
     store_ids = [s["id"] for s in stores["stores"]]
     df["key"] = 1
     stores_df = pd.DataFrame({"store_id": store_ids, "key": 1})
 
-    # Cross-join, creating a grid with all stores and all items
     grid = stores_df.merge(df, on="key").drop(columns="key")
 
 
@@ -48,14 +51,13 @@ def get_all_store_items():
     slot_df = pd.DataFrame({'slot_index': range(672)})
     full_grid = grid.merge(slot_df, how='cross')
 
-    # Drop slot/item combos outside the item's time_of_day window
     full_grid['hour'] = (full_grid['slot_index'] % 96) // 4
 
     full_grid['window_start'] = full_grid['time_of_day'].map(
-        lambda t: HOURS_AVAILABLE[t][0])
+        lambda t: HOURS_AVAILABLE[t][0]) # type:ignore
 
     full_grid['window_end'] = full_grid['time_of_day'].map(
-        lambda t: HOURS_AVAILABLE[t][1])
+        lambda t: HOURS_AVAILABLE[t][1]) # type:ignore
 
     in_window = (full_grid['hour'] >= full_grid['window_start']) & \
         (full_grid['hour'] < full_grid['window_end'])
@@ -71,54 +73,42 @@ def get_all_store_items():
 
 def get_slot_features():
 
-    engine = get_snowflake_engine()
+    engine = create_engine(os.getenv("NEON_DATABASE_URL"))
     query = """
         select
-            p.store_id,
-            p.item_id,
-            p.day_of_week,
-            p.sale_hour,
-            (p.slot_index % 4) * 15 as sale_minute,
-            p.slot_index,
-            p.avg_slot_quantity,
-            p.sample_size,
-            m.category,
-            p.days_observed
+            store_id,
+            item_id,
+            day_of_week,
+            sale_hour,
+            (slot_index %% 4) * 15 as sale_minute,
+            slot_index,
+            avg_slot_quantity,
+            sample_size,
+            days_observed
 
-        from INTERMEDIATE.INT_SALES__TIME_OF_DAY_PROFILE p
-        inner join PUBLIC.MENU_ITEMS m
-            on p.item_id = m.item_id
+        from public.baseline_profile
     """
 
     df = pd.read_sql(query, engine)
-    df.columns = df.columns.str.lower()
+    df["category"] = df["item_id"].map(ITEM_CATEGORIES)
 
     return df
 
 
 def get_cold_start_profiles():
 
-    engine = get_snowflake_engine()
-    query = "select * from MARTS.MART_COLD_START_PROFILE"
-
-    df = pd.read_sql(query, engine)
-    df.columns = df.columns.str.lower()
-
-    return df
+    engine = create_engine(os.getenv("NEON_DATABASE_URL"))
+    return pd.read_sql("select * from public.cold_start_profile", engine)
 
 
-def get_mart_store_traffic_ratio():
+def get_traffic_ratio():
 
-    engine = get_snowflake_engine()
-    query = "select * from MARTS.MART_STORE_TRAFFIC_RATIO"
-
-    df = pd.read_sql(query, engine)
-    df.columns = df.columns.str.lower()
-
-    return df
+    engine = create_engine(os.getenv("NEON_DATABASE_URL"))
+    return pd.read_sql("select * from public.traffic_ratio", engine)
 
 
-def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder):
+def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder,
+            weather_by_region=None):
 
     established = df['days_observed'] >= ESTABLISHED_DAYS_THRESHOLD
     in_profile = df['sample_size'] > 0
@@ -139,8 +129,18 @@ def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder):
 
 
     #   --- WARM MODEL ---
+    if weather_by_region is not None:
+        # Per-date, per-region actual weather (used by the A/B simulation's
+        # "perfect forecast" ML side)
+        region = df_warm['store_id'].map(STORE_REGIONS)
+        df_warm['temp_f'] = region.map(
+            lambda r: weather_by_region[r]['temp_f'])
+        df_warm['precip'] = region.map(
+            lambda r: int(weather_by_region[r]['precip']))
+    else:
+        df_warm['temp_f'] = NEUTRAL_TEMP_F
+        df_warm['precip'] = NEUTRAL_PRECIP
 
-    # Encode store_id and item_id using saved encoders
     df_warm['store_id'] = store_encoder.transform(df_warm['store_id'])
     df_warm['item_id'] = item_encoder.transform(df_warm['item_id'])
 
@@ -148,21 +148,17 @@ def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder):
 
     X = df_warm[FEATURE_COLS]
 
-    # Run inference
     df_warm['predicted_units'] = lgbm.predict(X)
 
-    # Decode encoded columns
     df_warm['store_id'] = store_encoder.inverse_transform(df_warm['store_id'])
     df_warm['item_id'] = item_encoder.inverse_transform(df_warm['item_id'])
 
 
     #   --- ZERO MODEL ---
-
     df_zero['predicted_units'] = 0.0
 
 
     #   --- COLD MODEL ---
-
     # Merge both dataframes on category
     df_cold_start = df_cold_start.rename(columns=
                                     {'avg_slot_quantity': 'category_avg',
@@ -185,19 +181,24 @@ def predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder):
     return combined_df[['store_id', 'item_id', 'predicted_units', 'slot_index']]
 
 
-if __name__ == "__main__":
+def generate_production_plan(weather_by_region=None, verbose=True):
+    """Builds the full store/item/slot production plan.
 
-    # Load models and encoders
+    weather_by_region=None (default) uses the static grid's neutral weather
+    placeholder -- this is what the live dashboard's public.predictions table
+    is built from. Passing a {region: {"temp_f", "precip"}} dict instead
+    conditions the warm-path model on that actual per-date weather -- used by
+    run_daily_simulation.py's ML side, treating the A/B simulation's
+    synthetic ground-truth weather for that date as a "perfect forecast".
+    """
     lgbm = joblib.load("ml/models/lgbm.joblib")
     store_encoder = joblib.load("ml/models/store_encoder.joblib")
     item_encoder = joblib.load("ml/models/item_encoder.joblib")
 
-    # Obtain full grid of slot_index and items per each store
-    # Tuned to each store's opening and closing hours
-    print("Loading items per store...")
+    if verbose: print("Loading items per store...")
     grid = get_all_store_items()
 
-    print("Loading current conditions from Snowflake...")
+    if verbose: print("Loading current conditions from Neon...")
     df_features = get_slot_features()
 
     # Left-join profile features onto full spine
@@ -216,22 +217,24 @@ if __name__ == "__main__":
     df['category'] = df['category_y'].fillna(df['category_x'])
     df = df.drop(columns=['category_x', 'category_y'])
 
-    print("Loading cold start data from Snowflake...")
+    if verbose: print("Loading cold start data from Neon...")
     df_cold_start = get_cold_start_profiles()
-    df_ratio = get_mart_store_traffic_ratio()
+    df_ratio = get_traffic_ratio()
+
+    if verbose: print(f"Running inference for {len(df)} store/item combinations...")
+    return predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder,
+                   weather_by_region=weather_by_region)
 
 
-    print(f"Running inference for {len(df)} store/item combinations...")
-    production_plan = \
-        predict(df, df_cold_start, df_ratio, lgbm, store_encoder, item_encoder)
+if __name__ == "__main__":
 
-    # Get Snowflake engine created in features.py
-    engine = get_snowflake_engine()
+    production_plan = generate_production_plan()
 
-    # Add timestamp and replace previous predictions
+    engine = create_engine(os.getenv("NEON_DATABASE_URL"))
+
     production_plan['predicted_at'] = pd.Timestamp.now()
-    production_plan.to_sql('predictions', engine, if_exists='replace',
-                           index=False, chunksize=10000)
+    production_plan.to_sql('predictions', engine, schema="public",
+                           if_exists='replace', index=False, chunksize=10000)
 
     print("\n--- PRODUCTION PLAN SUMMARY ---")
     print(f"Total predictions written : {len(production_plan)}")
@@ -243,5 +246,5 @@ if __name__ == "__main__":
     print(f"\nTop 5 items by avg predicted units:")
     top_items = (production_plan.groupby('item_id')['predicted_units']
                  .mean().sort_values(ascending=False).head(5))
-    for item, avg in top_items.items():
+    for item, avg in top_items.items(): # type:ignore
         print(f"  {item:<35} {avg:.2f}")

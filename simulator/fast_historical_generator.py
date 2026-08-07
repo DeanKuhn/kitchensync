@@ -4,6 +4,7 @@ from datetime import date, timedelta, datetime
 from psycopg2.extras import execute_values
 
 from api.db.connection import get_store_connection, release_connection
+from simulator.weather import get_weather, weather_demand_multiplier
 
 with open("config/stores.yaml", "r") as f:
     stores = yaml.safe_load(f)
@@ -50,7 +51,7 @@ WEEKDAY_MULTIPLIER = {
 
 # Pre-calculates date attributes
 SIMULATION_DAYS = []
-for day_idx in range(42):
+for day_idx in range(70):
     sim_date = START_DATE + timedelta(days=day_idx)
     SIMULATION_DAYS.append({
         "date": sim_date,
@@ -63,6 +64,7 @@ for store in stores["stores"]:
     store_id = store["id"]
     level = int(store["level"])
     hours = store["hours"]
+    region = store["region"]
 
     if hours == "24/7": min_max_hours = [0, 24]
     elif hours == "5am-11pm": min_max_hours = [5, 23]
@@ -75,14 +77,12 @@ for store in stores["stores"]:
     cursor = connection.cursor()
 
     try:
-        # Accumulate the ENTIRE 6-week run for this store in memory, so we
-        # only round-trip to Neon once (via execute_values below) instead of
-        # once per day
         store_sales_batch = []
 
         for day_data in SIMULATION_DAYS:
             sim_date = day_data["date"]
             weekday_int = day_data["int"]
+            weather = get_weather(region, sim_date)
 
             # Simulates random days by creating a random offset
             random_offset = random.choices(
@@ -90,7 +90,8 @@ for store in stores["stores"]:
                 weights=RANDOMNESS[level]["weights"]
             )[0]
 
-            day_base_target = BASE_VOLUME[level] + random_offset
+            day_base_target = (BASE_VOLUME[level] + random_offset) * \
+                weather_demand_multiplier(weather)
 
             for hour in range(min_max_hours[0], min_max_hours[1]):
 
@@ -108,7 +109,10 @@ for store in stores["stores"]:
                 if not available_items:
                     continue
 
-                popularity_weights = [i["popularity"] for i in available_items]
+                popularity_weights = [
+                    i["popularity"] * weather_demand_multiplier(weather, i["category"])
+                    for i in available_items
+                ]
 
                 for _ in range(event_count):
                     item = random.choices(available_items,
@@ -142,7 +146,7 @@ for store in stores["stores"]:
 
         connection.commit()
         print(f"[{store_id}] Successfully persisted {len(store_sales_batch)} " \
-              "rows across 6 weeks.")
+              "rows across 10 weeks.")
 
     except Exception as e:
         connection.rollback()

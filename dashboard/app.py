@@ -18,8 +18,7 @@ from dashboard.utils.data_fetch import \
     get_production_plan, get_waste_summary, get_sim_now, get_today_start
 
 # --- LIVE REFRESH ---
-# Refresh every 5 minutes since the pos simulator extracts to Snowflake every
-# 5 minutes
+# Refresh every 5 minutes to pick up new live waste/stockout events from Neon
 st_autorefresh(interval=300000, key="datarefresh")
 
 st.set_page_config(page_title="KitchenSync Dashboard", layout="wide")

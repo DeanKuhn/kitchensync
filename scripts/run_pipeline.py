@@ -1,8 +1,9 @@
 # Daily pipeline: baseline profile → A/B simulation → ab_results.json
 # Run manually or via kitchensync-pipeline.timer (systemd).
-# Snowflake removed from the nightly path (2026-07) — predictions and the
-# baseline profile are read from Neon. See CLAUDE.md retrain playbook for
-# the manual Snowflake steps used to refresh MARTS.PREDICTIONS.
+# Snowflake retired entirely (2026-08) — predictions and the baseline
+# profile are read from and written to Neon exclusively. See CLAUDE.md's
+# retrain playbook for the manual steps used to refresh public.predictions
+# (python -m ml.train then python -m ml.predict, no Snowflake involved).
 
 
 import subprocess

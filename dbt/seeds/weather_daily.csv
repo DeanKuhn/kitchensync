@@ -1,0 +1,281 @@
+region,sale_date,temp_f,precip
+West Wisconsin,2026-05-20,30.5,True
+West Wisconsin,2026-05-21,45.2,False
+West Wisconsin,2026-05-22,14.5,False
+West Wisconsin,2026-05-23,38.7,False
+West Wisconsin,2026-05-24,24.2,False
+West Wisconsin,2026-05-25,53.2,False
+West Wisconsin,2026-05-26,74.3,True
+West Wisconsin,2026-05-27,81.7,False
+West Wisconsin,2026-05-28,91.2,False
+West Wisconsin,2026-05-29,20.0,False
+West Wisconsin,2026-05-30,55.4,True
+West Wisconsin,2026-05-31,30.5,False
+West Wisconsin,2026-06-01,97.3,False
+West Wisconsin,2026-06-02,55.9,False
+West Wisconsin,2026-06-03,82.0,False
+West Wisconsin,2026-06-04,56.6,False
+West Wisconsin,2026-06-05,59.1,True
+West Wisconsin,2026-06-06,62.2,False
+West Wisconsin,2026-06-07,98.5,True
+West Wisconsin,2026-06-08,20.0,True
+West Wisconsin,2026-06-09,56.5,True
+West Wisconsin,2026-06-10,15.2,False
+West Wisconsin,2026-06-11,12.0,False
+West Wisconsin,2026-06-12,24.1,False
+West Wisconsin,2026-06-13,45.3,False
+West Wisconsin,2026-06-14,45.5,False
+West Wisconsin,2026-06-15,63.2,True
+West Wisconsin,2026-06-16,87.0,False
+West Wisconsin,2026-06-17,60.7,False
+West Wisconsin,2026-06-18,49.1,False
+West Wisconsin,2026-06-19,96.9,True
+West Wisconsin,2026-06-20,46.3,False
+West Wisconsin,2026-06-21,23.3,True
+West Wisconsin,2026-06-22,42.6,False
+West Wisconsin,2026-06-23,91.4,False
+West Wisconsin,2026-06-24,13.2,False
+West Wisconsin,2026-06-25,47.7,False
+West Wisconsin,2026-06-26,91.9,False
+West Wisconsin,2026-06-27,65.1,True
+West Wisconsin,2026-06-28,68.8,False
+West Wisconsin,2026-06-29,65.4,False
+West Wisconsin,2026-06-30,84.2,True
+West Wisconsin,2026-07-01,70.7,False
+West Wisconsin,2026-07-02,16.5,False
+West Wisconsin,2026-07-03,18.1,True
+West Wisconsin,2026-07-04,71.5,True
+West Wisconsin,2026-07-05,98.7,False
+West Wisconsin,2026-07-06,82.9,False
+West Wisconsin,2026-07-07,94.7,False
+West Wisconsin,2026-07-08,92.3,True
+West Wisconsin,2026-07-09,56.7,False
+West Wisconsin,2026-07-10,87.1,False
+West Wisconsin,2026-07-11,97.5,False
+West Wisconsin,2026-07-12,59.3,False
+West Wisconsin,2026-07-13,85.6,False
+West Wisconsin,2026-07-14,86.6,False
+West Wisconsin,2026-07-15,97.2,True
+West Wisconsin,2026-07-16,22.1,True
+West Wisconsin,2026-07-17,83.1,False
+West Wisconsin,2026-07-18,60.5,False
+West Wisconsin,2026-07-19,52.3,True
+West Wisconsin,2026-07-20,11.5,True
+West Wisconsin,2026-07-21,36.7,False
+West Wisconsin,2026-07-22,31.7,False
+West Wisconsin,2026-07-23,34.0,False
+West Wisconsin,2026-07-24,68.2,False
+West Wisconsin,2026-07-25,39.2,False
+West Wisconsin,2026-07-26,64.5,False
+West Wisconsin,2026-07-27,72.2,True
+West Wisconsin,2026-07-28,59.5,False
+South Wisconsin,2026-05-20,48.7,False
+South Wisconsin,2026-05-21,92.6,False
+South Wisconsin,2026-05-22,73.9,False
+South Wisconsin,2026-05-23,58.5,False
+South Wisconsin,2026-05-24,73.1,False
+South Wisconsin,2026-05-25,33.8,True
+South Wisconsin,2026-05-26,51.4,True
+South Wisconsin,2026-05-27,85.6,True
+South Wisconsin,2026-05-28,58.1,False
+South Wisconsin,2026-05-29,48.8,False
+South Wisconsin,2026-05-30,77.6,True
+South Wisconsin,2026-05-31,46.8,False
+South Wisconsin,2026-06-01,95.2,True
+South Wisconsin,2026-06-02,37.6,True
+South Wisconsin,2026-06-03,61.5,False
+South Wisconsin,2026-06-04,29.0,True
+South Wisconsin,2026-06-05,74.2,True
+South Wisconsin,2026-06-06,27.3,False
+South Wisconsin,2026-06-07,21.0,False
+South Wisconsin,2026-06-08,90.6,False
+South Wisconsin,2026-06-09,12.8,False
+South Wisconsin,2026-06-10,62.9,False
+South Wisconsin,2026-06-11,51.4,False
+South Wisconsin,2026-06-12,44.1,False
+South Wisconsin,2026-06-13,24.7,False
+South Wisconsin,2026-06-14,58.4,False
+South Wisconsin,2026-06-15,35.0,False
+South Wisconsin,2026-06-16,37.1,False
+South Wisconsin,2026-06-17,59.5,True
+South Wisconsin,2026-06-18,17.5,False
+South Wisconsin,2026-06-19,57.1,False
+South Wisconsin,2026-06-20,64.7,False
+South Wisconsin,2026-06-21,10.1,False
+South Wisconsin,2026-06-22,50.5,False
+South Wisconsin,2026-06-23,69.8,False
+South Wisconsin,2026-06-24,42.6,False
+South Wisconsin,2026-06-25,47.2,True
+South Wisconsin,2026-06-26,49.8,True
+South Wisconsin,2026-06-27,88.5,True
+South Wisconsin,2026-06-28,27.0,False
+South Wisconsin,2026-06-29,69.8,False
+South Wisconsin,2026-06-30,56.1,False
+South Wisconsin,2026-07-01,91.4,False
+South Wisconsin,2026-07-02,38.0,False
+South Wisconsin,2026-07-03,49.6,False
+South Wisconsin,2026-07-04,12.9,False
+South Wisconsin,2026-07-05,92.7,False
+South Wisconsin,2026-07-06,89.9,True
+South Wisconsin,2026-07-07,28.0,False
+South Wisconsin,2026-07-08,39.2,False
+South Wisconsin,2026-07-09,76.0,False
+South Wisconsin,2026-07-10,50.1,False
+South Wisconsin,2026-07-11,96.1,True
+South Wisconsin,2026-07-12,26.6,True
+South Wisconsin,2026-07-13,48.8,False
+South Wisconsin,2026-07-14,90.0,False
+South Wisconsin,2026-07-15,51.4,False
+South Wisconsin,2026-07-16,78.9,False
+South Wisconsin,2026-07-17,21.7,False
+South Wisconsin,2026-07-18,48.2,False
+South Wisconsin,2026-07-19,70.0,False
+South Wisconsin,2026-07-20,60.4,False
+South Wisconsin,2026-07-21,69.5,False
+South Wisconsin,2026-07-22,52.2,False
+South Wisconsin,2026-07-23,28.2,True
+South Wisconsin,2026-07-24,62.1,False
+South Wisconsin,2026-07-25,26.6,False
+South Wisconsin,2026-07-26,87.0,False
+South Wisconsin,2026-07-27,75.2,False
+South Wisconsin,2026-07-28,23.5,False
+Minnesota,2026-05-20,87.8,False
+Minnesota,2026-05-21,27.9,False
+Minnesota,2026-05-22,15.8,True
+Minnesota,2026-05-23,86.0,False
+Minnesota,2026-05-24,41.4,False
+Minnesota,2026-05-25,51.9,True
+Minnesota,2026-05-26,60.5,False
+Minnesota,2026-05-27,89.3,False
+Minnesota,2026-05-28,86.9,True
+Minnesota,2026-05-29,45.3,False
+Minnesota,2026-05-30,53.9,False
+Minnesota,2026-05-31,19.8,False
+Minnesota,2026-06-01,30.4,False
+Minnesota,2026-06-02,31.3,False
+Minnesota,2026-06-03,26.4,False
+Minnesota,2026-06-04,30.6,False
+Minnesota,2026-06-05,32.2,False
+Minnesota,2026-06-06,51.8,False
+Minnesota,2026-06-07,43.2,False
+Minnesota,2026-06-08,87.5,False
+Minnesota,2026-06-09,78.5,False
+Minnesota,2026-06-10,39.3,False
+Minnesota,2026-06-11,25.4,False
+Minnesota,2026-06-12,20.0,True
+Minnesota,2026-06-13,15.5,False
+Minnesota,2026-06-14,73.5,False
+Minnesota,2026-06-15,72.3,False
+Minnesota,2026-06-16,33.7,False
+Minnesota,2026-06-17,27.0,False
+Minnesota,2026-06-18,31.4,False
+Minnesota,2026-06-19,25.1,True
+Minnesota,2026-06-20,67.3,False
+Minnesota,2026-06-21,50.8,False
+Minnesota,2026-06-22,33.0,False
+Minnesota,2026-06-23,49.8,False
+Minnesota,2026-06-24,52.4,False
+Minnesota,2026-06-25,25.4,False
+Minnesota,2026-06-26,49.0,False
+Minnesota,2026-06-27,48.4,False
+Minnesota,2026-06-28,66.8,False
+Minnesota,2026-06-29,29.0,False
+Minnesota,2026-06-30,74.2,False
+Minnesota,2026-07-01,85.2,False
+Minnesota,2026-07-02,77.0,False
+Minnesota,2026-07-03,98.5,True
+Minnesota,2026-07-04,42.0,False
+Minnesota,2026-07-05,93.2,False
+Minnesota,2026-07-06,77.7,False
+Minnesota,2026-07-07,90.6,True
+Minnesota,2026-07-08,52.7,True
+Minnesota,2026-07-09,14.8,True
+Minnesota,2026-07-10,34.1,False
+Minnesota,2026-07-11,30.2,False
+Minnesota,2026-07-12,19.2,False
+Minnesota,2026-07-13,55.8,False
+Minnesota,2026-07-14,23.8,False
+Minnesota,2026-07-15,44.2,True
+Minnesota,2026-07-16,55.6,True
+Minnesota,2026-07-17,83.7,True
+Minnesota,2026-07-18,42.9,False
+Minnesota,2026-07-19,29.8,False
+Minnesota,2026-07-20,15.8,True
+Minnesota,2026-07-21,74.7,True
+Minnesota,2026-07-22,57.8,False
+Minnesota,2026-07-23,79.9,True
+Minnesota,2026-07-24,39.1,False
+Minnesota,2026-07-25,78.2,False
+Minnesota,2026-07-26,38.3,False
+Minnesota,2026-07-27,31.2,False
+Minnesota,2026-07-28,98.6,False
+Iowa,2026-05-20,91.8,False
+Iowa,2026-05-21,39.8,False
+Iowa,2026-05-22,17.8,True
+Iowa,2026-05-23,46.4,True
+Iowa,2026-05-24,82.6,False
+Iowa,2026-05-25,10.6,False
+Iowa,2026-05-26,36.2,True
+Iowa,2026-05-27,63.8,False
+Iowa,2026-05-28,21.3,False
+Iowa,2026-05-29,34.7,True
+Iowa,2026-05-30,28.7,False
+Iowa,2026-05-31,21.3,False
+Iowa,2026-06-01,77.4,False
+Iowa,2026-06-02,39.7,False
+Iowa,2026-06-03,15.2,True
+Iowa,2026-06-04,50.9,False
+Iowa,2026-06-05,99.9,False
+Iowa,2026-06-06,44.1,False
+Iowa,2026-06-07,91.2,False
+Iowa,2026-06-08,12.2,False
+Iowa,2026-06-09,43.2,False
+Iowa,2026-06-10,75.7,False
+Iowa,2026-06-11,33.0,True
+Iowa,2026-06-12,98.6,False
+Iowa,2026-06-13,42.7,True
+Iowa,2026-06-14,94.9,False
+Iowa,2026-06-15,67.4,False
+Iowa,2026-06-16,96.7,False
+Iowa,2026-06-17,74.6,True
+Iowa,2026-06-18,90.8,False
+Iowa,2026-06-19,75.3,False
+Iowa,2026-06-20,33.9,False
+Iowa,2026-06-21,65.7,False
+Iowa,2026-06-22,88.2,True
+Iowa,2026-06-23,37.9,True
+Iowa,2026-06-24,65.3,True
+Iowa,2026-06-25,30.0,True
+Iowa,2026-06-26,76.2,False
+Iowa,2026-06-27,48.5,False
+Iowa,2026-06-28,48.0,False
+Iowa,2026-06-29,67.3,False
+Iowa,2026-06-30,47.5,False
+Iowa,2026-07-01,14.0,False
+Iowa,2026-07-02,12.8,False
+Iowa,2026-07-03,93.4,False
+Iowa,2026-07-04,80.3,False
+Iowa,2026-07-05,48.5,True
+Iowa,2026-07-06,98.2,False
+Iowa,2026-07-07,55.0,True
+Iowa,2026-07-08,22.6,True
+Iowa,2026-07-09,35.1,False
+Iowa,2026-07-10,68.5,True
+Iowa,2026-07-11,86.6,False
+Iowa,2026-07-12,25.9,True
+Iowa,2026-07-13,79.4,False
+Iowa,2026-07-14,28.1,False
+Iowa,2026-07-15,28.2,False
+Iowa,2026-07-16,82.2,True
+Iowa,2026-07-17,13.1,True
+Iowa,2026-07-18,49.0,True
+Iowa,2026-07-19,17.8,False
+Iowa,2026-07-20,54.4,True
+Iowa,2026-07-21,95.2,False
+Iowa,2026-07-22,83.6,False
+Iowa,2026-07-23,69.8,False
+Iowa,2026-07-24,26.0,False
+Iowa,2026-07-25,34.0,False
+Iowa,2026-07-26,85.2,False
+Iowa,2026-07-27,13.3,True
+Iowa,2026-07-28,71.1,False

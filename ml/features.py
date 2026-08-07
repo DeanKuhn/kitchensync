@@ -1,11 +1,3 @@
-# Feature engineering from mart/intermediate models
-
-
-import os
-import pandas as pd
-import snowflake.connector # type:ignore
-from sqlalchemy import create_engine # type:ignore
-from cryptography.hazmat.primitives.serialization import load_pem_private_key # type:ignore
 from dotenv import load_dotenv # type:ignore
 
 
@@ -21,65 +13,30 @@ FEATURE_COLS = [
     'day_of_week',
     'is_weekend',
     'avg_slot_quantity',
-    'sample_size'
+    'sample_size',
+    'temp_f',
+    'precip'
 ]
-
-
-def get_snowflake_engine(schema="MARTS"):
-    key_pem = os.getenv("SNOWFLAKE_PRIVATE_KEY")
-    if key_pem:
-        # Cloud deployments (e.g. Streamlit Community Cloud) have no
-        # filesystem to mount a key file into, so the PEM contents are
-        # passed directly via a secret/env var instead.
-        key_bytes = key_pem.encode()
-    else:
-        key_path = os.path.expanduser(os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH", "~/.ssh/snowflake_rsa.p8"))
-        with open(key_path, "rb") as f:
-            key_bytes = f.read()
-    private_key = load_pem_private_key(key_bytes, password=None)
-    account=os.getenv("SNOWFLAKE_ACCOUNT")
-    user=os.getenv("SNOWFLAKE_USER")
-    database=os.getenv("SNOWFLAKE_DATABASE")
-    warehouse=os.getenv("SNOWFLAKE_WAREHOUSE")
-    role=os.getenv("SNOWFLAKE_ROLE")
-
-    connection_string = (
-        f"snowflake://{user}@{account}/{database}/{schema}"
-        f"?warehouse={warehouse}"
-        f"&role={role}"
-    )
-
-    return create_engine(connection_string,
-        connect_args = {"private_key": private_key})
 
 
 def load_features():
 
-    engine = get_snowflake_engine()
+    # Recomputes scripts/build_training_features.py's Neon-native port of
+    # mart_ml_training_features in-memory each call (Snowflake/dbt retired
+    # from this path) rather than reading a persisted Neon table -- the
+    # joined result is ~270MB, too large to justify keeping permanently
+    # against a 512MB project storage cap when training only runs manually
+    # and infrequently (decision #12).
+    from scripts.build_training_features import build_features
 
-    query = """
-        select
-            store_id,
-            item_id,
-            sale_date,
-            sale_hour,
-            sale_minute,
-            slot_index,
-            slot_quantity,
-            day_of_week,
-            avg_slot_quantity,
-            sample_size
-
-        from MARTS.MART_ML_TRAINING_FEATURES
-    """
-
-    df = pd.read_sql(query, engine)
-
-    # Make columns lowercase so they're easier to work with
-    df.columns = df.columns.str.lower()
+    df = build_features()
 
     # Adds new column: 1 if Saturday or Sunday, 0 else (0=Monday..6=Sunday)
     df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
+
+    # Postgres boolean -> pandas bool; cast to int like is_weekend for a
+    # model-friendly numeric dtype
+    df['precip'] = df['precip'].astype(int)
 
 
     return df
