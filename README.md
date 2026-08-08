@@ -1,10 +1,15 @@
 # KitchenSync
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://kitchensync.streamlit.app)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/package%20manager-uv-de5fe9)](https://github.com/astral-sh/uv)
+[![Last commit](https://img.shields.io/github/last-commit/DeanKuhn/kitchensync)](https://github.com/DeanKuhn/kitchensync/commits/master)
+
 A portfolio-grade simulation of a Kwik Trip-style Kitchen Production System (KPS): a LightGBM model forecasts per-store, per-item food production at 15-minute slot grain from simulated POS data, and a Streamlit dashboard turns those forecasts into Kitchen/Chicken production queues, refreshed every 5 minutes. 12 stores, 4 regions, 45 active menu items.
 
 A nightly A/B pipeline on AWS EC2 pits the ML system against a naive hourly-average baseline — with a synthetic weather feature giving the ML side a structural edge the baseline's date-blind lookup can't have — and pushes results to a static Astro portfolio site every morning.
 
-**Live:** [kitchensync.streamlit.app](https://kitchensync.streamlit.app)
+![KitchenSync production plan dashboard, split into Kitchen and Chicken production queues](docs/assets/dashboard.png)
 
 ---
 
